@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type linuxPlatform struct{}
@@ -32,4 +34,29 @@ func (linuxPlatform) InterfaceHint(i int) string { return fmt.Sprintf("wt-mb-%d"
 
 func (linuxPlatform) DiscoverInterface(addr netip.Addr) (string, error) {
 	return discoverByAddr(addr)
+}
+
+// RouteInterface uses `ip route get`, which consults all routing tables and
+// rules (netbird installs routes in a custom table, so /proc/net/route alone
+// would miss them). Output looks like:
+//
+//	10.1.2.3 dev wt-mb-0 table 7120 src 100.92.14.7 uid 0
+func (linuxPlatform) RouteInterface(addr netip.Addr) (string, error) {
+	out, err := exec.Command("ip", "route", "get", addr.String()).Output()
+	if err != nil {
+		return "", fmt.Errorf("`ip route get %s`: %w", addr, err)
+	}
+	return parseRouteDev(string(out))
+}
+
+// parseRouteDev extracts the token after "dev" (shared shape on both
+// platforms' route-lookup outputs handled per-OS).
+func parseRouteDev(out string) (string, error) {
+	fields := strings.Fields(out)
+	for i, f := range fields {
+		if f == "dev" && i+1 < len(fields) {
+			return fields[i+1], nil
+		}
+	}
+	return "", fmt.Errorf("no device in route lookup output %q", strings.TrimSpace(out))
 }

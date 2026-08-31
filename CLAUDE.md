@@ -129,6 +129,23 @@ fails if `TestedMax` != the go.mod pin. To bump:
   resolvconf → direct /etc/resolv.conf rewrite. macOS: scutil dynamic-store keys
   (`State:/Network/Service/NetBird-*/DNS`), not /etc/resolver files. Conflict story in
   docs/dns.md; per-instance `disable_dns` via Login.
+- **2026-08-31 (v0.2) — settings changes use SetConfig, not re-Login**: re-Login would
+  re-consume setup-key usage (one-off keys would fail). `multibird set` pushes DNS/port
+  changes via the `SetConfig` gRPC, starting the daemon briefly if needed.
+- **2026-08-31 (v0.2) — per-instance peer hostname**: Login sends `hostname` as
+  `<os-hostname>-<instance>` so two instances on one box never register as the same
+  peer name. Existing (already-logged-in) instances are unaffected.
+- **2026-08-31 (v0.2) — SSO**: implemented via Login's `needsSSOLogin` response +
+  `WaitSSOLogin(userCode)`. `up --all` continues past a failing/pending-SSO instance
+  and reports it at the end.
+- **2026-08-31 (v0.2) — route "who wins" lookup**: OS routing-table lookups exec
+  `ip route get` (Linux; consults netbird's custom tables, /proc/net/route would not)
+  and `route -n get` (macOS), behind the platform interface. These are NOT netbird
+  invocations, so the nbcli choke point does not apply.
+- **2026-08-31 (v0.2) — boot units are system-level only**: no user units. Daemons
+  need root; macOS LaunchAgents can't create utun devices. Units run
+  `multibird up <name>` so preflight runs at boot. The brief's `--system` flag is
+  dropped (system is the only mode).
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 

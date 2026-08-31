@@ -23,6 +23,9 @@ type Env struct {
 	Platform platform.Platform
 	// Warnf receives user-facing warnings (default: stderr).
 	Warnf func(format string, args ...any)
+	// Printf receives user-facing progress output (default: stdout) — e.g.
+	// the SSO "open this URL" prompt.
+	Printf func(format string, args ...any)
 }
 
 // NewEnv builds the default environment for the current OS/user.
@@ -40,6 +43,9 @@ func NewEnv() (*Env, error) {
 		Platform: p,
 		Warnf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "warning: "+format+"\n", args...)
+		},
+		Printf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stdout, format+"\n", args...)
 		},
 	}, nil
 }
@@ -60,11 +66,12 @@ func (e *Env) Add(inst *instance.Instance) error {
 	return e.Store.Save(inst)
 }
 
-// Up brings one instance fully up: spawn daemon, first-time Login (which
-// plumbs the isolation params into netbird's config.json), engine Up,
-// interface discovery, and the v0.1 preflight (netbird IP range overlap
-// against other running instances). With strict=true an overlap brings the
-// instance back down and errors; otherwise it warns.
+// Up brings one instance fully up: spawn daemon, first-time Login (setup key
+// or SSO browser flow; this plumbs the isolation params into netbird's
+// config.json), engine Up, interface discovery, and preflight (IP-range,
+// routed-prefix and DNS-management conflicts against other running
+// instances). With strict=true a conflict brings the instance back down and
+// errors; otherwise it warns.
 func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) error {
 	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
 	if err := daemon.Start(inst, p); err != nil {
@@ -80,19 +87,26 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 	}
 
 	if !inst.LoggedIn {
-		if inst.SSO {
-			return fmt.Errorf("instance %q is configured for SSO, which multibird v0.1 does not support — recreate it with a setup key (`multibird remove %s && multibird add %s --management-url %s --setup-key ...`)",
-				inst.Name, inst.Name, inst.Name, inst.ManagementURL)
-		}
-		err := c.Login(ctx, nbgrpc.LoginParams{
-			SetupKey:      inst.SetupKey,
+		hostname := instanceHostname(inst.Name)
+		ch, err := c.Login(ctx, nbgrpc.LoginParams{
+			SetupKey:      inst.SetupKey, // empty for SSO instances
 			ManagementURL: inst.ManagementURL,
+			Hostname:      hostname,
 			InterfaceName: e.Platform.InterfaceHint(inst.Index),
 			WireguardPort: p.WGPort,
 			DisableDNS:    inst.DisableDNS,
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)
+		}
+		if ch != nil {
+			if !inst.SSO {
+				e.Warnf("instance %q: management server requested SSO login despite the setup key", inst.Name)
+			}
+			e.Printf("instance %q: complete the login in your browser:\n\n    %s\n\nwaiting for you to finish (Ctrl-C aborts this instance only)...", inst.Name, ch.VerificationURI)
+			if err := c.WaitSSOLogin(ctx, ch, hostname); err != nil {
+				return fmt.Errorf("instance %q: %w", inst.Name, err)
+			}
 		}
 		inst.LoggedIn = true
 		if err := e.Store.Save(inst); err != nil {
@@ -120,22 +134,31 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 		}
 	}
 
-	// v0.1 preflight: netbird IP range overlap across running instances.
-	conflicts, err := e.ipRangeConflicts(ctx)
+	// Preflight: IP-range, routed-prefix and DNS-management conflicts against
+	// the other running instances.
+	conflicts, err := e.conflictsInvolving(ctx, inst.Name)
 	if err != nil {
 		e.Warnf("preflight check skipped: %v", err)
 		return nil
 	}
+	if len(conflicts) > 0 && strict {
+		_ = c.Down(ctx)
+		return fmt.Errorf("preflight (--strict): %s — instance %q was brought back down", conflicts[0], inst.Name)
+	}
 	for _, cf := range conflicts {
-		if cf.A.Instance == inst.Name || cf.B.Instance == inst.Name {
-			if strict {
-				_ = c.Down(ctx)
-				return fmt.Errorf("preflight (--strict): %s — instance %q was brought back down", cf, inst.Name)
-			}
-			e.Warnf("preflight: %s", cf)
-		}
+		e.Warnf("preflight: %s", cf)
 	}
 	return nil
+}
+
+// instanceHostname derives a per-instance peer hostname so two multibird
+// instances on the same box never register as the same peer name.
+func instanceHostname(name string) string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "multibird-" + name
+	}
+	return h + "-" + name
 }
 
 // Down stops the engine and the daemon for one instance.
@@ -217,42 +240,4 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 		out = append(out, s)
 	}
 	return out
-}
-
-// ipRangeConflicts gathers netbird IP ranges from every RUNNING instance and
-// reports overlaps.
-func (e *Env) ipRangeConflicts(ctx context.Context) ([]preflight.Conflict, error) {
-	insts, err := e.Store.List()
-	if err != nil {
-		return nil, err
-	}
-	var nets []preflight.Net
-	for _, inst := range insts {
-		p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
-		if !daemon.Running(p) {
-			continue
-		}
-		c, err := nbgrpc.Dial(p.SocketPath)
-		if err != nil {
-			continue
-		}
-		sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		st, err := c.Status(sctx)
-		cancel()
-		c.Close()
-		if err != nil {
-			continue
-		}
-		ipStr := st.GetFullStatus().GetLocalPeerState().GetIP()
-		if ipStr == "" {
-			continue
-		}
-		n, err := preflight.ParseAddr(inst.Name, ipStr)
-		if err != nil {
-			e.Warnf("%v", err)
-			continue
-		}
-		nets = append(nets, n)
-	}
-	return preflight.IPRangeConflicts(nets), nil
 }

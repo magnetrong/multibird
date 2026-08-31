@@ -32,6 +32,11 @@ type Platform interface {
 	// DiscoverInterface finds the actual interface carrying addr (the
 	// instance's netbird IP) after the engine is up.
 	DiscoverInterface(addr netip.Addr) (string, error)
+
+	// RouteInterface asks the OS routing table which interface would carry
+	// traffic to addr — used by preflight to report which instance WINS an
+	// overlapping-route conflict.
+	RouteInterface(addr netip.Addr) (string, error)
 }
 
 // New returns the implementation for the current OS (build-tagged).

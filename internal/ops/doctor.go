@@ -58,6 +58,35 @@ func (e *Env) Doctor(ctx context.Context) []Check {
 		}
 	}
 
+	// WireGuard listen ports: instances must not collide with each other or
+	// with stock netbird's default (51820).
+	portOwner := map[int]string{}
+	portProblems := 0
+	for _, i := range insts {
+		port := i.DeriveParams(e.Store.Root, e.Store.RunDir).WGPort
+		if other, taken := portOwner[port]; taken {
+			portProblems++
+			out = append(out, Check{Name: "wireguard ports", OK: false,
+				Detail: fmt.Sprintf("instances %q and %q both use WireGuard port %d — fix with `multibird set <name> --wireguard-port <port>`", other, i.Name, port)})
+		}
+		portOwner[port] = i.Name
+		if port == 51820 {
+			portProblems++
+			out = append(out, Check{Name: "wireguard ports", OK: true, Warn: true,
+				Detail: fmt.Sprintf("instance %q uses port 51820, stock netbird's default — they will collide if stock netbird runs; pick another with `multibird set %s --wireguard-port <port>`", i.Name, i.Name)})
+		}
+	}
+	if portProblems == 0 {
+		out = append(out, Check{Name: "wireguard ports", OK: true, Detail: "no collisions among instances or with stock netbird (51820)"})
+	}
+
+	// Cross-instance conflicts among whatever is currently running.
+	if conflicts, err := e.conflictsInvolving(ctx, ""); err == nil {
+		for _, cf := range conflicts {
+			out = append(out, Check{Name: "running conflicts", OK: true, Warn: true, Detail: cf})
+		}
+	}
+
 	// Run dir: sockets/pids live here; daemons (root) create it, but flag
 	// obvious problems early.
 	run := e.Store.RunDir

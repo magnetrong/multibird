@@ -40,34 +40,127 @@ func (c *Client) Close() error { return c.conn.Close() }
 // where isolation parameters (interface name, WireGuard port, DNS toggle)
 // enter netbird: the daemon persists them into its own config.json.
 type LoginParams struct {
-	SetupKey      string // never log this
+	SetupKey      string // empty for SSO; never log this
 	ManagementURL string
+	Hostname      string // peer name; per-instance so meshes see distinct peers
 	InterfaceName string
 	WireguardPort int
 	DisableDNS    bool
 }
 
+// SSOChallenge is returned when the management server wants a browser login
+// instead of (or in addition to) a setup key.
+type SSOChallenge struct {
+	UserCode        string
+	VerificationURI string // complete URI including the code, for the user to open
+}
+
 // Login registers the instance with its management server and persists the
-// isolation parameters. Errors never include the setup key.
-func (c *Client) Login(ctx context.Context, p LoginParams) error {
+// isolation parameters. A nil, nil return means logged in; a non-nil
+// *SSOChallenge means the caller must run the browser flow and then call
+// WaitSSOLogin. Errors never include the setup key.
+func (c *Client) Login(ctx context.Context, p LoginParams) (*SSOChallenge, error) {
 	iface := p.InterfaceName
 	port := int64(p.WireguardPort)
 	dns := p.DisableDNS
 	req := &proto.LoginRequest{
 		SetupKey:      p.SetupKey,
 		ManagementUrl: p.ManagementURL,
+		Hostname:      p.Hostname,
 		InterfaceName: &iface,
 		WireguardPort: &port,
 		DisableDns:    &dns,
 	}
 	resp, err := c.d.Login(ctx, req)
 	if err != nil {
-		return fmt.Errorf("login against %s failed: %w — check the management URL and that the setup key is valid and not expired", p.ManagementURL, err)
+		hint := "check the management URL and that the setup key is valid and not expired"
+		if p.SetupKey == "" {
+			hint = "check the management URL"
+		}
+		return nil, fmt.Errorf("login against %s failed: %w — %s", p.ManagementURL, err, hint)
 	}
 	if resp.GetNeedsSSOLogin() {
-		return fmt.Errorf("this account requires SSO login, which multibird does not support yet (v0.1) — use a setup key: create one in the NetBird dashboard under Setup Keys")
+		uri := resp.GetVerificationURIComplete()
+		if uri == "" {
+			uri = resp.GetVerificationURI()
+		}
+		return &SSOChallenge{UserCode: resp.GetUserCode(), VerificationURI: uri}, nil
+	}
+	return nil, nil
+}
+
+// WaitSSOLogin blocks until the user completes the browser flow for the
+// given challenge (or ctx expires).
+func (c *Client) WaitSSOLogin(ctx context.Context, ch *SSOChallenge, hostname string) error {
+	_, err := c.d.WaitSSOLogin(ctx, &proto.WaitSSOLoginRequest{UserCode: ch.UserCode, Hostname: hostname})
+	if err != nil {
+		return fmt.Errorf("waiting for SSO login: %w — complete the login in your browser at %s and try again", err, ch.VerificationURI)
 	}
 	return nil
+}
+
+// SetConfigParams are the instance settings multibird can change after the
+// initial login WITHOUT re-consuming the setup key.
+type SetConfigParams struct {
+	ManagementURL string
+	InterfaceName string
+	WireguardPort int
+	DisableDNS    bool
+}
+
+// SetConfig updates the daemon's persisted config. Takes effect on the next
+// engine up (callers should down/up to apply).
+func (c *Client) SetConfig(ctx context.Context, p SetConfigParams) error {
+	iface := p.InterfaceName
+	port := int64(p.WireguardPort)
+	dns := p.DisableDNS
+	req := &proto.SetConfigRequest{
+		ManagementUrl: p.ManagementURL,
+		InterfaceName: &iface,
+		WireguardPort: &port,
+		DisableDns:    &dns,
+	}
+	if _, err := c.d.SetConfig(ctx, req); err != nil {
+		return fmt.Errorf("updating daemon config: %w", err)
+	}
+	return nil
+}
+
+// Network is one route/network the mesh offers this peer.
+type Network struct {
+	ID       string
+	Range    string // CIDR, or invalid for DNS-routed networks (Domains set)
+	Selected bool
+	Domains  []string
+}
+
+// Networks lists the networks (routes) available to this instance.
+func (c *Client) Networks(ctx context.Context) ([]Network, error) {
+	resp, err := c.d.ListNetworks(ctx, &proto.ListNetworksRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("listing networks: %w", err)
+	}
+	out := make([]Network, 0, len(resp.GetRoutes()))
+	for _, r := range resp.GetRoutes() {
+		out = append(out, Network{
+			ID: r.GetID(), Range: r.GetRange(),
+			Selected: r.GetSelected(), Domains: r.GetDomains(),
+		})
+	}
+	return out, nil
+}
+
+// DNSDomains extracts the DNS match domains this instance's daemon currently
+// serves (empty strings mean "all domains", i.e. primary resolver).
+func DNSDomains(st *proto.StatusResponse) []string {
+	var out []string
+	for _, g := range st.GetFullStatus().GetDnsServers() {
+		if !g.GetEnabled() {
+			continue
+		}
+		out = append(out, g.GetDomains()...)
+	}
+	return out
 }
 
 // Up starts the engine and blocks until it is running.

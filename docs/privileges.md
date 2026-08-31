@@ -34,9 +34,15 @@ not its default model and is explicitly **out of scope for multibird v1**.
 - `permission denied` dialing a socket → "this instance's daemon runs as root; re-run
   with sudo".
 
-## Open questions (revisit in v0.2)
+## Boot persistence (v0.2, implemented)
 
-- macOS LaunchAgent (per-user) cannot create utun devices; `multibird install` on macOS
-  therefore defaults to a LaunchDaemon despite the brief suggesting user-level default.
-  Verify during v0.2 implementation.
-- Group-based socket access (e.g. a `multibird` group with 0660 sockets) as an opt-in.
+`multibird install <name>` writes a SYSTEM-level unit — a systemd unit on Linux, a
+LaunchDaemon on macOS — because the daemons need root and macOS LaunchAgents cannot
+create utun devices. Units invoke `multibird up <name>` (never netbird directly) so
+preflight always runs, including at boot. `multibird uninstall <name>` reverses it.
+Both require sudo.
+
+## Open questions
+
+- Group-based socket access (e.g. a `multibird` group with 0660 sockets) as an opt-in —
+  parked (see ROADMAP parking lot): an open control socket is equivalent to root.
