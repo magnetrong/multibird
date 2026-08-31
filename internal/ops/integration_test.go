@@ -37,7 +37,7 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 	inst := &instance.Instance{Name: "itest", Index: 0}
 	p := inst.DeriveParams(root, run)
 
-	if err := daemon.Start(inst, p); err != nil {
+	if err := daemon.Start(inst, p, nil); err != nil {
 		t.Fatalf("daemon.Start: %v", err)
 	}
 	t.Cleanup(func() { daemon.Nuke(p) })

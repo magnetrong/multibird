@@ -160,6 +160,13 @@ fails if `TestedMax` != the go.mod pin. To bump:
   are silently ignored (profiles rework). `up` now calls SetConfig with the isolation
   params before the first Login. Found because a fresh macOS instance ran on the
   defaults (utun100 + port 51820) — both owned by the stock install.
+- **2026-08-31 (v0.2.5) — macOS daemons run with NB_USE_LEGACY_ROUTING=true**:
+  netbird's darwin advanced routing flushes ALL netbird-tagged scoped default routes
+  on every engine start AND stop (v0.77.1 systemops_darwin.go flushScopedDefaults),
+  so two daemons kick each other into restart loops. Legacy ref-counted exclusion
+  routes coexist cleanly. Plumbed via platform.DaemonEnv() → daemon.Start. Linux
+  DaemonEnv is empty; whether Linux policy-routing tables collide between daemons is
+  an open question for the next Linux multi-instance test.
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 

@@ -22,8 +22,9 @@ import (
 const LogLevel = "info"
 
 // Start spawns the instance's daemon detached (its own session, survives us)
-// and records the pid. No-op if the daemon is already running.
-func Start(inst *instance.Instance, p instance.Params) error {
+// and records the pid. extraEnv (from platform.DaemonEnv) is appended to the
+// inherited environment. No-op if the daemon is already running.
+func Start(inst *instance.Instance, p instance.Params, extraEnv []string) error {
 	if pid, ok := ReadPID(p); ok && Alive(pid) {
 		return nil
 	}
@@ -37,6 +38,9 @@ func Start(inst *instance.Instance, p instance.Params) error {
 	_ = os.Remove(p.SocketPath)
 
 	cmd := nbcli.New(inst.NetbirdBin).ServiceRunCmd(p.ConfigJSON, p.DaemonAddr, p.LogFile, LogLevel)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil

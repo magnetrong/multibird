@@ -37,6 +37,11 @@ type Platform interface {
 	// traffic to addr — used by preflight to report which instance WINS an
 	// overlapping-route conflict.
 	RouteInterface(addr netip.Addr) (string, error)
+
+	// DaemonEnv returns extra environment variables for spawned netbird
+	// daemons — OS-specific coexistence settings (e.g. disabling netbird's
+	// single-instance-assuming advanced routing on macOS).
+	DaemonEnv() []string
 }
 
 // New returns the implementation for the current OS (build-tagged).

@@ -43,7 +43,7 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 		p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
 		wasRunning := daemon.Running(p)
 		if !wasRunning {
-			if err := daemon.Start(inst, p); err != nil {
+			if err := daemon.Start(inst, p, e.Platform.DaemonEnv()); err != nil {
 				return fmt.Errorf("applying settings needs the instance's daemon: %w", err)
 			}
 		}

@@ -74,7 +74,7 @@ func (e *Env) Add(inst *instance.Instance) error {
 // errors; otherwise it warns.
 func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) error {
 	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
-	if err := daemon.Start(inst, p); err != nil {
+	if err := daemon.Start(inst, p, e.Platform.DaemonEnv()); err != nil {
 		return err
 	}
 	c, err := nbgrpc.Dial(p.SocketPath)

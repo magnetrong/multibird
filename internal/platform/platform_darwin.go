@@ -55,6 +55,16 @@ func (darwinPlatform) DiscoverInterface(addr netip.Addr) (string, error) {
 	return discoverByAddr(addr)
 }
 
+// DaemonEnv: netbird's darwin "advanced routing" installs a scoped default
+// route and, on every engine start AND stop, flushes ALL netbird-tagged
+// scoped defaults — including a sibling daemon's (verified in v0.77.1
+// systemops_darwin.go flushScopedDefaults). Two daemons therefore kick each
+// other into restart loops. NB_USE_LEGACY_ROUTING selects the ref-counted
+// per-prefix exclusion routes instead, which coexist cleanly.
+func (darwinPlatform) DaemonEnv() []string {
+	return []string{"NB_USE_LEGACY_ROUTING=true"}
+}
+
 // RouteInterface uses `route -n get`, whose output contains a line like:
 //
 //	interface: utun4

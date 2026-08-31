@@ -36,6 +36,11 @@ func (linuxPlatform) DiscoverInterface(addr netip.Addr) (string, error) {
 	return discoverByAddr(addr)
 }
 
+// DaemonEnv: no coexistence overrides needed on Linux so far. (Open
+// question: whether two daemons' policy-routing tables collide — revisit
+// when running multiple instances on Linux with routes.)
+func (linuxPlatform) DaemonEnv() []string { return nil }
+
 // RouteInterface uses `ip route get`, which consults all routing tables and
 // rules (netbird installs routes in a custom table, so /proc/net/route alone
 // would miss them). Output looks like:
