@@ -6,6 +6,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/magnetrong/multibird/internal/nbcli"
 	"github.com/magnetrong/multibird/internal/nbgrpc"
 	"github.com/magnetrong/multibird/internal/platform"
-	"github.com/magnetrong/multibird/internal/preflight"
 )
 
 // Env bundles the process-wide dependencies.
@@ -135,8 +135,8 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 		return fmt.Errorf("instance %q came up but status failed: %w", inst.Name, err)
 	}
 	if ipStr := st.GetFullStatus().GetLocalPeerState().GetIP(); ipStr != "" {
-		if n, err := preflight.ParseAddr(inst.Name, ipStr); err == nil {
-			if iface, err := e.Platform.DiscoverInterface(n.Prefix.Addr()); err == nil && iface != inst.Interface {
+		if addr, err := hostAddr(ipStr); err == nil {
+			if iface, err := e.Platform.DiscoverInterface(addr); err == nil && iface != inst.Interface {
 				inst.Interface = iface
 				if err := e.Store.Save(inst); err != nil {
 					return err
@@ -160,6 +160,17 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 		e.Warnf("preflight: %s", cf)
 	}
 	return nil
+}
+
+// hostAddr parses the daemon-reported local address ("100.79.230.225/16" or
+// bare IP) into the HOST address — unlike preflight.ParseAddr, which masks
+// to the network address for overlap checks and is useless for interface
+// discovery.
+func hostAddr(s string) (netip.Addr, error) {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Addr(), nil
+	}
+	return netip.ParseAddr(s)
 }
 
 // instanceHostname derives a per-instance peer hostname so two multibird
@@ -247,8 +258,8 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 					// while the engine was still connecting (no IP yet), so
 					// the recorded interface can be empty or stale.
 					if s.NetbirdIP != "" {
-						if n, err := preflight.ParseAddr(inst.Name, s.NetbirdIP); err == nil {
-							if iface, err := e.Platform.DiscoverInterface(n.Prefix.Addr()); err == nil && iface != inst.Interface {
+						if addr, err := hostAddr(s.NetbirdIP); err == nil {
+							if iface, err := e.Platform.DiscoverInterface(addr); err == nil && iface != inst.Interface {
 								inst.Interface = iface
 								s.Interface = iface
 								if err := e.Store.Save(inst); err != nil {
