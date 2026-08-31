@@ -146,6 +146,11 @@ fails if `TestedMax` != the go.mod pin. To bump:
   need root; macOS LaunchAgents can't create utun devices. Units run
   `multibird up <name>` so preflight runs at boot. The brief's `--system` flag is
   dropped (system is the only mode).
+- **2026-08-31 (v0.2.1) — macOS interface hint is literal "utun"**: requesting a
+  specific unit ("utun100") fails with "resource busy"; wireguard-go treats the bare
+  name "utun" as kernel-auto-assign. Found in first real macOS `up`. `status` now also
+  backfills interface discovery, since `up` can return while the engine is still
+  connecting (no IP to discover yet).
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 

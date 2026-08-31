@@ -232,6 +232,20 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 					fs := st.GetFullStatus()
 					s.NetbirdIP = fs.GetLocalPeerState().GetIP()
 					s.Peers = len(fs.GetPeers())
+					// Backfill interface discovery: `up` may have returned
+					// while the engine was still connecting (no IP yet), so
+					// the recorded interface can be empty or stale.
+					if s.NetbirdIP != "" {
+						if n, err := preflight.ParseAddr(inst.Name, s.NetbirdIP); err == nil {
+							if iface, err := e.Platform.DiscoverInterface(n.Prefix.Addr()); err == nil && iface != inst.Interface {
+								inst.Interface = iface
+								s.Interface = iface
+								if err := e.Store.Save(inst); err != nil {
+									e.Warnf("instance %q: recording discovered interface: %v", inst.Name, err)
+								}
+							}
+						}
+					}
 				}
 				cancel()
 				c.Close() //nolint:gosec // best-effort close of a status probe
