@@ -37,7 +37,7 @@ match domains overlap.
 
 - Preflight (v0.2 fully; v0.1 stub) inspects each instance's DNS intent and reports:
   which instances manage DNS, which domains, and whether anything overlaps.
-- Resolution is the **user's choice**, applied per instance via the `Login` gRPC
+- Resolution is the **user's choice**, applied per instance via the `SetConfig` gRPC
   request's `disable_dns` field (equivalent of `netbird up --disable-dns`), stored in
   that instance's own config.json. Recommended pattern: the mesh whose DNS matters most
   keeps DNS management; every other instance runs with DNS disabled or with split

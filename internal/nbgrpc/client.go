@@ -37,16 +37,17 @@ func Dial(socketPath string) (*Client, error) {
 // Close releases the underlying gRPC connection.
 func (c *Client) Close() error { return c.conn.Close() }
 
-// LoginParams is the subset of the Login request multibird sets. This is
-// where isolation parameters (interface name, WireGuard port, DNS toggle)
-// enter netbird: the daemon persists them into its own config.json.
+// LoginParams is the subset of the Login request multibird sets.
+//
+// NOTE (verified against v0.77.1 client/server/server.go): Login persists
+// ONLY managementUrl and preSharedKey ("persistLoginOverrides"); the
+// interfaceName/wireguardPort/disable_dns fields in LoginRequest are
+// silently ignored. Isolation parameters must be pushed via SetConfig
+// BEFORE Login — see Env.Up.
 type LoginParams struct {
 	SetupKey      string // empty for SSO; never log this
 	ManagementURL string
 	Hostname      string // peer name; per-instance so meshes see distinct peers
-	InterfaceName string
-	WireguardPort int
-	DisableDNS    bool
 }
 
 // SSOChallenge is returned when the management server wants a browser login
@@ -61,16 +62,10 @@ type SSOChallenge struct {
 // *SSOChallenge means the caller must run the browser flow and then call
 // WaitSSOLogin. Errors never include the setup key.
 func (c *Client) Login(ctx context.Context, p LoginParams) (*SSOChallenge, error) {
-	iface := p.InterfaceName
-	port := int64(p.WireguardPort)
-	dns := p.DisableDNS
 	req := &proto.LoginRequest{
 		SetupKey:      p.SetupKey,
 		ManagementUrl: p.ManagementURL,
 		Hostname:      p.Hostname,
-		InterfaceName: &iface,
-		WireguardPort: &port,
-		DisableDns:    &dns,
 	}
 	resp, err := c.d.Login(ctx, req)
 	if err != nil {

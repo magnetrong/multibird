@@ -87,14 +87,25 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 	}
 
 	if !inst.LoggedIn {
+		// Isolation parameters go through SetConfig: as of netbird v0.77,
+		// Login ignores every config field except managementUrl/PSK (see
+		// nbgrpc.LoginParams). SetConfig must run BEFORE Login/Up so the
+		// engine never starts on the defaults (utun100, port 51820 — both
+		// owned by a stock netbird install).
+		err := c.SetConfig(ctx, nbgrpc.SetConfigParams{
+			ManagementURL: inst.ManagementURL,
+			InterfaceName: e.Platform.InterfaceHint(inst.Index),
+			WireguardPort: p.WGPort,
+			DisableDNS:    inst.DisableDNS,
+		})
+		if err != nil {
+			return fmt.Errorf("instance %q: %w", inst.Name, err)
+		}
 		hostname := instanceHostname(inst.Name)
 		ch, err := c.Login(ctx, nbgrpc.LoginParams{
 			SetupKey:      inst.SetupKey, // empty for SSO instances
 			ManagementURL: inst.ManagementURL,
 			Hostname:      hostname,
-			InterfaceName: e.Platform.InterfaceHint(inst.Index),
-			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DisableDNS,
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)

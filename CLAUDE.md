@@ -54,9 +54,11 @@ through `internal/nbcli` and be added to this list in the same PR.**
   platforms.
 
 That's it. Interface name, WireGuard port, setup key, management URL, disable-DNS etc.
-are deliberately NOT passed as CLI flags — they go through the `Login` gRPC request
-(`interfaceName`, `wireguardPort`, `setupKey`, `managementUrl`, `disable_dns`), which
-persists them into the instance's config.json.
+are deliberately NOT passed as CLI flags — isolation parameters (`interfaceName`,
+`wireguardPort`, `disable_dns`) go through the `SetConfig` gRPC BEFORE first Login
+(as of v0.77, `Login` persists only `managementUrl`/PSK and silently ignores the
+rest), and credentials (`setupKey`, SSO) go through `Login`. Both persist into the
+instance's config.json.
 
 ## Version policy
 
@@ -151,6 +153,13 @@ fails if `TestedMax` != the go.mod pin. To bump:
   name "utun" as kernel-auto-assign. Found in first real macOS `up`. `status` now also
   backfills interface discovery, since `up` can return while the engine is still
   connecting (no IP to discover yet).
+- **2026-08-31 (v0.2.3) — isolation params go through SetConfig, not Login
+  (supersedes the "interface/port plumbing" decision above)**: verified in v0.77.1
+  `client/server/server.go`: Login's `persistLoginOverrides` persists ONLY
+  managementUrl/preSharedKey; interfaceName/wireguardPort/disable_dns in LoginRequest
+  are silently ignored (profiles rework). `up` now calls SetConfig with the isolation
+  params before the first Login. Found because a fresh macOS instance ran on the
+  defaults (utun100 + port 51820) — both owned by the stock install.
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 
