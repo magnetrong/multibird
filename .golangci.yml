@@ -11,6 +11,17 @@ linters:
     - unconvert
     - unparam
   settings:
+    errcheck:
+      exclude-functions:
+        # Terminal/tabwriter output: write errors surface at Flush (checked)
+        # or are unactionable for stdout/stderr.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Read-path closes; write-path code checks Close explicitly where it
+        # matters.
+        - (*os.File).Close
+        - (*github.com/magnetrong/multibird/internal/nbgrpc.Client).Close
     gosec:
       excludes:
         - G204 # exec with variable args is the point of internal/nbcli; audited there

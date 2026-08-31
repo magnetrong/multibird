@@ -13,7 +13,7 @@ import (
 // boot. Requires root. Returns the unit path.
 func Install(name, multibirdBin string) (string, error) {
 	path := SystemdUnitPath(name)
-	if err := os.WriteFile(path, []byte(SystemdUnit(name, multibirdBin)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(SystemdUnit(name, multibirdBin)), 0o644); err != nil { //nolint:gosec // G306: systemd units are conventionally world-readable and contain no secrets
 		return "", fmt.Errorf("writing %s: %w — boot units are system-level, run with sudo", path, err)
 	}
 	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {

@@ -40,9 +40,12 @@ func (s *Store) Save(i *Instance) error {
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", p.TOMLPath, err)
 	}
-	defer f.Close()
 	if err := toml.NewEncoder(f).Encode(i); err != nil {
+		f.Close() //nolint:gosec // best-effort close on the error path
 		return fmt.Errorf("encoding %s: %w", p.TOMLPath, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("writing %s: %w", p.TOMLPath, err)
 	}
 	return nil
 }

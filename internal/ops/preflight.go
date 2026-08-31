@@ -40,7 +40,7 @@ func (e *Env) snapshotRunning(ctx context.Context) ([]runningSnapshot, error) {
 		st, err := c.Status(sctx)
 		if err != nil {
 			cancel()
-			c.Close()
+			c.Close() //nolint:gosec // best-effort close of a status probe
 			continue
 		}
 		snap := runningSnapshot{
@@ -73,7 +73,7 @@ func (e *Env) snapshotRunning(ctx context.Context) ([]runningSnapshot, error) {
 			e.Warnf("instance %q: %v (route-overlap preflight incomplete)", inst.Name, err)
 		}
 		cancel()
-		c.Close()
+		c.Close() //nolint:gosec // best-effort close of a status probe
 		out = append(out, snap)
 	}
 	return out, nil

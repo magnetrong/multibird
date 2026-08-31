@@ -171,7 +171,7 @@ func (e *Env) Down(ctx context.Context, inst *instance.Instance) error {
 				e.Warnf("instance %q: graceful engine down failed (%v); stopping daemon anyway", inst.Name, err)
 			}
 			cancel()
-			c.Close()
+			c.Close() //nolint:gosec // best-effort close of a status probe
 		}
 	}
 	return daemon.Stop(p)
@@ -234,7 +234,7 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 					s.Peers = len(fs.GetPeers())
 				}
 				cancel()
-				c.Close()
+				c.Close() //nolint:gosec // best-effort close of a status probe
 			}
 		}
 		out = append(out, s)

@@ -15,7 +15,7 @@ import (
 // handles truncation/rotation by reopening from the start).
 func (e *Env) Logs(ctx context.Context, inst *instance.Instance, w io.Writer, tailBytes int64, follow bool) error {
 	path := inst.DeriveParams(e.Store.Root, e.Store.RunDir).LogFile
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is derived from a ValidateName-checked instance name under our config root
 	if err != nil {
 		return fmt.Errorf("opening log for %q: %w — the log appears after the first `sudo multibird up %s`", inst.Name, err, inst.Name)
 	}

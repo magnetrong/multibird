@@ -34,6 +34,7 @@ func Dial(socketPath string) (*Client, error) {
 	return &Client{conn: conn, d: proto.NewDaemonServiceClient(conn)}, nil
 }
 
+// Close releases the underlying gRPC connection.
 func (c *Client) Close() error { return c.conn.Close() }
 
 // LoginParams is the subset of the Login request multibird sets. This is

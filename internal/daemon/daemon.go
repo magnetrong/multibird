@@ -27,7 +27,10 @@ func Start(inst *instance.Instance, p instance.Params) error {
 	if pid, ok := ReadPID(p); ok && Alive(pid) {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(p.SocketPath), 0o755); err != nil {
+	// 0755 is deliberate: the run dir holds sockets and pid files, not
+	// secrets, and mirrors stock netbird's /var/run model (see CLAUDE.md
+	// Decisions "socket location").
+	if err := os.MkdirAll(filepath.Dir(p.SocketPath), 0o755); err != nil { //nolint:gosec // G301: non-secret run dir, intentionally 0755
 		return fmt.Errorf("creating run dir %s: %w (daemons need root — try sudo, see docs/privileges.md)", filepath.Dir(p.SocketPath), err)
 	}
 	// A stale socket from a crashed daemon prevents the new one from binding.
@@ -46,7 +49,9 @@ func Start(inst *instance.Instance, p instance.Params) error {
 	if err := cmd.Process.Release(); err != nil {
 		return fmt.Errorf("detaching daemon process: %w", err)
 	}
-	if err := os.WriteFile(p.PIDFile, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+	// 0644: unprivileged `multibird status` must read the pid to know the
+	// daemon is alive; a pid is not a secret.
+	if err := os.WriteFile(p.PIDFile, []byte(strconv.Itoa(pid)), 0o644); err != nil { //nolint:gosec // G306: pid file must be world-readable
 		return fmt.Errorf("writing pid file %s: %w", p.PIDFile, err)
 	}
 	// Wait for the socket to appear so callers can dial immediately after.

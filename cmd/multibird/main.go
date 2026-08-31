@@ -71,7 +71,7 @@ func rootCmd() *cobra.Command {
 }
 
 // completeInstanceNames offers configured instance names for shell completion.
-func completeInstanceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func completeInstanceNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -98,7 +98,7 @@ func addCmd() *cobra.Command {
 		Use:   "add <name>",
 		Short: "Register a new instance (does not start it)",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if (setupKey == "") == !sso {
 				return errors.New("exactly one of --setup-key or --sso is required")
 			}
@@ -243,7 +243,7 @@ func listCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List configured instances",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			e, err := env()
 			if err != nil {
 				return err
@@ -312,7 +312,7 @@ func doctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Check the environment: netbird binaries, tested versions, leftover state",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := env()
 			if err != nil {
 				return err
@@ -360,7 +360,7 @@ func nukeCmd() *cobra.Command {
 		Short:             "Forceful cleanup of a crashed/half-up instance (idempotent)",
 		ValidArgsFunction: completeInstanceNames,
 		Args:              cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
 				return err
@@ -389,7 +389,7 @@ func installCmd() *cobra.Command {
 		Long:              "Generates and enables a root-level boot unit that runs `multibird up <name>`\nat boot — via multibird, never netbird directly, so preflight always runs.\nRequires sudo.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeInstanceNames,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
 				return err
@@ -418,7 +418,7 @@ func uninstallCmd() *cobra.Command {
 		Short:             "Remove an instance's boot unit",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeInstanceNames,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if err := persist.Uninstall(args[0]); err != nil {
 				return err
 			}
@@ -503,6 +503,6 @@ func tuiCmd() *cobra.Command {
 		Use:   "tui",
 		Short: "Live view of all instances (v0.3)",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return tui.Run() },
+		RunE:  func(_ *cobra.Command, _ []string) error { return tui.Run() },
 	}
 }
