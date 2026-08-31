@@ -8,12 +8,42 @@ package version
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
 
 // Version is multibird's own version, injected by goreleaser.
 var Version = "dev"
+
+// Full returns Version plus, for source builds, the VCS revision baked in by
+// the Go toolchain — so `multibird --version` always identifies the exact
+// commit a binary was built from.
+func Full() string {
+	v := Version
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return v
+	}
+	var rev, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if rev != "" {
+		if len(rev) > 12 {
+			rev = rev[:12]
+		}
+		v += " (" + rev + dirty + ")"
+	}
+	return v
+}
 
 const (
 	// TestedMin is the oldest netbird release multibird is known to work with.

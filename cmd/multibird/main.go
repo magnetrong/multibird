@@ -60,7 +60,7 @@ func rootCmd() *cobra.Command {
 		Use:           "multibird",
 		Short:         "Run multiple NetBird VPN instances simultaneously",
 		Long:          "multibird runs multiple isolated NetBird daemons side by side —\none per mesh — until NetBird ships native simultaneous profiles\n(netbirdio/netbird#446), at which point you should migrate back and\ndelete multibird.",
-		Version:       version.Version,
+		Version:       version.Full(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
