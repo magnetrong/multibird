@@ -17,11 +17,11 @@ Multiple isolated NetBird instances on one machine, controllable from one CLI.
 - macOS (arm64/amd64) and Linux (amd64/arm64)
 
 Acceptance criteria:
-- Two instances against two different management servers are simultaneously `Connected`, each with its own interface and socket; `multibird status` shows both correctly.
-- `go test ./...` passes on a machine with no netbird installed.
-- `multibird doctor` correctly flags a netbird version outside TESTED_VERSIONS.
-- `multibird nuke` recovers a manually-killed daemon's leftovers and is idempotent.
-- Stock netbird (default profile) keeps working untouched throughout.
+- Two instances against two different management servers are simultaneously `Connected`, each with its own interface and socket; `multibird status` shows both correctly. ✅ **VERIFIED 2026-08-31 (macOS)**: stock netbird (work mesh) + a multibird instance (netbird.io cloud) carried simultaneous traffic, 0% loss on the stock side. Took v0.2.1–v0.2.6 fixes to get there — see the Decisions log.
+- `go test ./...` passes on a machine with no netbird installed. ✅
+- `multibird doctor` correctly flags a netbird version outside TESTED_VERSIONS. ✅ verified in the field (flagged a 0.72.2 install).
+- `multibird nuke` recovers a manually-killed daemon's leftovers and is idempotent. ✅ integration-tested + used in anger.
+- Stock netbird (default profile) keeps working untouched throughout. ✅ verified on macOS (after the v0.2.5 legacy-routing fix; advanced routing upstream is NOT multi-daemon-safe).
 
 ## v0.2 — conflict safety & persistence
 
@@ -43,10 +43,19 @@ of preflight gaps, since conflicts would then happen unattended at boot):
    completions
 
 Acceptance criteria:
-- Bringing up a second mesh that routes an overlapping prefix produces a loud, actionable warning naming the winning instance; `--strict` refuses.
-- An SSO-only NetBird account can be added and brought up with no setup key.
-- A macOS and a Linux box both reconnect all installed instances after reboot with no manual step.
+- Bringing up a second mesh that routes an overlapping prefix produces a loud, actionable warning naming the winning instance; `--strict` refuses. (implemented; not yet exercised against two real meshes with overlapping routes)
+- An SSO-only NetBird account can be added and brought up with no setup key. ✅ **VERIFIED 2026-08-31** against app.netbird.io (browser PKCE flow, including retry after pending email verification).
+- A macOS and a Linux box both reconnect all installed instances after reboot with no manual step. (implemented; reboot behavior NOT yet tested on either OS)
 - Docs `dns.md` / `privileges.md` reflect verified behavior, not assumptions.
+
+Open questions carried out of v0.2 field testing:
+- **Linux multi-instance routing**: does netbird's Linux advanced routing (policy
+  tables) have the same multi-daemon collision the macOS scoped-default flush had
+  (fixed via NB_USE_LEGACY_ROUTING on darwin)? Test two instances on Linux before
+  relying on it; platform.DaemonEnv is the hook if Linux needs the same treatment.
+- **Upstream**: consider filing an issue on netbirdio/netbird — Login silently
+  ignores config fields (surprising API), and flushScopedDefaults assumes a single
+  daemon per host.
 
 ## v0.3 — observability & distribution
 
