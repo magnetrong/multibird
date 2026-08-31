@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OWNER/multibird/internal/daemon"
-	"github.com/OWNER/multibird/internal/instance"
-	"github.com/OWNER/multibird/internal/nbgrpc"
+	"github.com/magnetrong/multibird/internal/daemon"
+	"github.com/magnetrong/multibird/internal/instance"
+	"github.com/magnetrong/multibird/internal/nbgrpc"
 )
 
 func TestIntegrationDaemonLifecycle(t *testing.T) {

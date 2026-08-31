@@ -1,4 +1,4 @@
-module github.com/OWNER/multibird
+module github.com/magnetrong/multibird
 
 go 1.25.5
 

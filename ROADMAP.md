@@ -25,12 +25,26 @@ Acceptance criteria:
 
 ## v0.2 — conflict safety & persistence
 
-- Full preflight: routed-prefix overlap detection with OS routing-table "who wins" report; DNS-management conflict detection with per-instance disable-DNS / split-domain guidance (no auto-arbitration)
-- Boot persistence: `install`/`uninstall` (launchd LaunchAgent/LaunchDaemon, systemd user/system units; units invoke multibird so preflight always runs)
-- `logs <name> [-f]` tailing per-instance daemon log files
+In priority order (1–3 land before boot persistence: persistence multiplies the cost
+of preflight gaps, since conflicts would then happen unattended at boot):
+
+1. Route-overlap preflight: routed-prefix overlap detection across instances
+   (`ListNetworks` gRPC) with an OS routing-table "who wins" report
+2. DNS-management conflict preflight with per-instance disable-DNS / split-domain
+   guidance (no auto-arbitration); `multibird set <name>` to toggle instance settings
+   (e.g. `--disable-dns`) with re-login
+3. `logs <name> [-f]` tailing per-instance daemon log files
+4. SSO login (`WaitSSOLogin` browser flow); `up --all` fails SSO-pending instances
+   with a clear message and continues the others
+5. Boot persistence: `install`/`uninstall` (launchd LaunchDaemon on macOS — agents
+   can't create utun devices — systemd units on Linux; units invoke multibird so
+   preflight always runs)
+6. Housekeeping: friendlier permission-denied errors (point at sudo), shell
+   completions
 
 Acceptance criteria:
 - Bringing up a second mesh that routes an overlapping prefix produces a loud, actionable warning naming the winning instance; `--strict` refuses.
+- An SSO-only NetBird account can be added and brought up with no setup key.
 - A macOS and a Linux box both reconnect all installed instances after reboot with no manual step.
 - Docs `dns.md` / `privileges.md` reflect verified behavior, not assumptions.
 
@@ -61,3 +75,6 @@ Acceptance criteria:
 - Windows support
 - Exit-node coordination between meshes
 - Metrics endpoint (Prometheus)
+- Group-based socket access (0660 + `multibird` group) so read-only commands work
+  without sudo — security-sensitive (an open control socket ≈ root); stock netbird
+  has the same sudo ergonomics, so this stays parked until there's real demand

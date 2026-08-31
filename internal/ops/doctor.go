@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/OWNER/multibird/internal/daemon"
-	"github.com/OWNER/multibird/internal/nbcli"
-	"github.com/OWNER/multibird/internal/version"
+	"github.com/magnetrong/multibird/internal/daemon"
+	"github.com/magnetrong/multibird/internal/nbcli"
+	"github.com/magnetrong/multibird/internal/version"
 )
 
 // Check is one doctor finding.

@@ -140,5 +140,6 @@ This codebase optimizes for being deletable.
 
 ## Housekeeping
 
-Module path is the placeholder `github.com/OWNER/multibird` — update it (and
-.goreleaser.yml, ci badges) when the real repo exists.
+Module path is `github.com/magnetrong/multibird` (renamed from the OWNER placeholder
+2026-08-31). The Homebrew tap stanza in .goreleaser.yml stays commented until the tap
+repo exists.

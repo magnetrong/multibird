@@ -9,12 +9,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/OWNER/multibird/internal/daemon"
-	"github.com/OWNER/multibird/internal/instance"
-	"github.com/OWNER/multibird/internal/nbcli"
-	"github.com/OWNER/multibird/internal/nbgrpc"
-	"github.com/OWNER/multibird/internal/platform"
-	"github.com/OWNER/multibird/internal/preflight"
+	"github.com/magnetrong/multibird/internal/daemon"
+	"github.com/magnetrong/multibird/internal/instance"
+	"github.com/magnetrong/multibird/internal/nbcli"
+	"github.com/magnetrong/multibird/internal/nbgrpc"
+	"github.com/magnetrong/multibird/internal/platform"
+	"github.com/magnetrong/multibird/internal/preflight"
 )
 
 // Env bundles the process-wide dependencies.

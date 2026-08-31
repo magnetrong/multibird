@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OWNER/multibird/internal/instance"
-	"github.com/OWNER/multibird/internal/nbcli"
+	"github.com/magnetrong/multibird/internal/instance"
+	"github.com/magnetrong/multibird/internal/nbcli"
 )
 
 // LogLevel for spawned daemons.

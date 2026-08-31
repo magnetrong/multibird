@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/OWNER/multibird/internal/instance"
-	"github.com/OWNER/multibird/internal/ops"
-	"github.com/OWNER/multibird/internal/persist"
-	"github.com/OWNER/multibird/internal/tui"
-	"github.com/OWNER/multibird/internal/version"
+	"github.com/magnetrong/multibird/internal/instance"
+	"github.com/magnetrong/multibird/internal/ops"
+	"github.com/magnetrong/multibird/internal/persist"
+	"github.com/magnetrong/multibird/internal/tui"
+	"github.com/magnetrong/multibird/internal/version"
 )
 
 func main() {
