@@ -111,6 +111,9 @@ func (c *Client) SetConfig(ctx context.Context, p SetConfigParams) error {
 	port := int64(p.WireguardPort)
 	dns := p.DisableDNS
 	req := &proto.SetConfigRequest{
+		// Each multibird daemon has exactly one profile: the default one.
+		// SetConfig requires a profile handle; "default" needs no username.
+		ProfileName:   "default",
 		ManagementUrl: p.ManagementURL,
 		InterfaceName: &iface,
 		WireguardPort: &port,
