@@ -26,8 +26,26 @@ const Repo = "magnetrong/multibird"
 
 // Release is the subset of the GitHub release API we use.
 type Release struct {
-	Tag    string            // e.g. "v0.3.0"
-	Assets map[string]string // asset name -> browser download URL
+	Tag    string           // e.g. "v0.3.0"
+	Assets map[string]Asset // asset name -> download locations
+}
+
+// Asset carries both download URLs for one release file: the public
+// browser URL (works unauthenticated on public repos) and the API URL
+// (needed, with a token and Accept: application/octet-stream, for
+// private repos).
+type Asset struct {
+	BrowserURL string
+	APIURL     string
+}
+
+// Token returns the GitHub token used for private repos:
+// MULTIBIRD_GITHUB_TOKEN, falling back to GITHUB_TOKEN.
+func Token() string {
+	if t := os.Getenv("MULTIBIRD_GITHUB_TOKEN"); t != "" {
+		return t
+	}
+	return os.Getenv("GITHUB_TOKEN")
 }
 
 // Version returns the release version without the leading "v".
@@ -43,13 +61,16 @@ func LatestRelease(ctx context.Context) (*Release, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	if t := Token(); t != "" {
+		req.Header.Set("Authorization", "Bearer "+t)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("checking github.com/%s for releases: %w — check your network", Repo, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-path close
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("github.com/%s has no releases yet", Repo)
+		return nil, fmt.Errorf("github.com/%s has no releases visible — none published yet, or the repo is private (set MULTIBIRD_GITHUB_TOKEN or GITHUB_TOKEN to a token with repo read access)", Repo)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned %s for the latest release", resp.Status)
@@ -57,16 +78,17 @@ func LatestRelease(ctx context.Context) (*Release, error) {
 	var body struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
+			Name       string `json:"name"`
+			BrowserURL string `json:"browser_download_url"`
+			APIURL     string `json:"url"`
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("decoding GitHub release response: %w", err)
 	}
-	rel := &Release{Tag: body.TagName, Assets: map[string]string{}}
+	rel := &Release{Tag: body.TagName, Assets: map[string]Asset{}}
 	for _, a := range body.Assets {
-		rel.Assets[a.Name] = a.URL
+		rel.Assets[a.Name] = Asset{BrowserURL: a.BrowserURL, APIURL: a.APIURL}
 	}
 	return rel, nil
 }
@@ -96,16 +118,16 @@ func ParseChecksums(s string) map[string]string {
 // replace (normally os.Executable()).
 func Apply(ctx context.Context, rel *Release, goos, goarch, binPath string) error {
 	name := AssetName(rel.Version(), goos, goarch)
-	assetURL, ok := rel.Assets[name]
+	asset, ok := rel.Assets[name]
 	if !ok {
 		return fmt.Errorf("release %s has no asset %s — platform not published?", rel.Tag, name)
 	}
-	sumURL, ok := rel.Assets["checksums.txt"]
+	sumAsset, ok := rel.Assets["checksums.txt"]
 	if !ok {
 		return fmt.Errorf("release %s has no checksums.txt — refusing to install unverifiable binary", rel.Tag)
 	}
 
-	sums, err := fetch(ctx, sumURL, 1<<20)
+	sums, err := fetch(ctx, sumAsset, 1<<20)
 	if err != nil {
 		return fmt.Errorf("downloading checksums.txt: %w", err)
 	}
@@ -114,7 +136,7 @@ func Apply(ctx context.Context, rel *Release, goos, goarch, binPath string) erro
 		return fmt.Errorf("checksums.txt in %s has no entry for %s", rel.Tag, name)
 	}
 
-	archive, err := fetch(ctx, assetURL, 256<<20)
+	archive, err := fetch(ctx, asset, 256<<20)
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", name, err)
 	}
@@ -141,10 +163,21 @@ func Apply(ctx context.Context, rel *Release, goos, goarch, binPath string) erro
 	return nil
 }
 
-func fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
+// fetch downloads one release asset. With a token it uses the API URL and
+// octet-stream negotiation (required for private repos); otherwise the
+// public browser URL.
+func fetch(ctx context.Context, a Asset, limit int64) ([]byte, error) {
+	url, token := a.BrowserURL, Token()
+	if token != "" && a.APIURL != "" {
+		url = a.APIURL
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
