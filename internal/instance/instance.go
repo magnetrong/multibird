@@ -75,7 +75,7 @@ type Instance struct {
 	// Empty means "not migrated yet" — Normalize fills it in.
 	DNSMode DNSMode `toml:"dns_mode,omitempty"`
 	// LegacyDisableDNS is the pre-dns_mode boolean, read only for migration
-	// (true→disabled, false→platform default). Never written back.
+	// (true→disabled, false→native). Never written back.
 	LegacyDisableDNS bool `toml:"disable_dns,omitempty"`
 	// LoggedIn records that a successful Login gRPC call persisted the
 	// isolation params into netbird's config.json.
@@ -124,16 +124,18 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 }
 
 // Normalize migrates legacy fields: instances saved before dns_mode carry
-// only disable_dns (true→disabled; false→the platform default passed in).
-// Returns true if something changed and the instance should be re-saved.
-func (i *Instance) Normalize(defaultMode DNSMode) bool {
+// only disable_dns (true→disabled, false→native — an EXISTING instance's
+// effective behavior never changes on upgrade; the platform default applies
+// only to newly added instances). Returns true if the instance changed and
+// should be re-saved.
+func (i *Instance) Normalize() bool {
 	if i.DNSMode != "" {
 		return false
 	}
 	if i.LegacyDisableDNS {
 		i.DNSMode = DNSDisabled
 	} else {
-		i.DNSMode = defaultMode
+		i.DNSMode = DNSNative
 	}
 	i.LegacyDisableDNS = false // never write the legacy field back
 	return true

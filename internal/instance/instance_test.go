@@ -152,18 +152,19 @@ func TestNormalizeDNSModeMigration(t *testing.T) {
 	tests := []struct {
 		name    string
 		inst    Instance
-		def     DNSMode
 		want    DNSMode
 		changed bool
 	}{
-		{"legacy disable_dns=true", Instance{LegacyDisableDNS: true}, DNSMultibird, DNSDisabled, true},
-		{"legacy disable_dns=false gets platform default (darwin)", Instance{}, DNSMultibird, DNSMultibird, true},
-		{"legacy disable_dns=false gets platform default (linux)", Instance{}, DNSNative, DNSNative, true},
-		{"already migrated stays put", Instance{DNSMode: DNSNative, LegacyDisableDNS: true}, DNSMultibird, DNSNative, false},
+		{"legacy disable_dns=true", Instance{LegacyDisableDNS: true}, DNSDisabled, true},
+		// Existing instances keep their effective behavior on upgrade:
+		// false means netbird managed DNS, so the mode stays native even on
+		// darwin (only NEW instances get the platform default).
+		{"legacy disable_dns=false stays native", Instance{}, DNSNative, true},
+		{"already migrated stays put", Instance{DNSMode: DNSMultibird, LegacyDisableDNS: true}, DNSMultibird, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.inst.Normalize(tt.def)
+			got := tt.inst.Normalize()
 			if got != tt.changed || tt.inst.DNSMode != tt.want {
 				t.Errorf("Normalize: changed=%v mode=%q; want changed=%v mode=%q", got, tt.inst.DNSMode, tt.changed, tt.want)
 			}

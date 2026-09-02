@@ -57,7 +57,7 @@ func (e *Env) Load(name string) (*instance.Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	if i.Normalize(e.Platform.DefaultDNSMode()) {
+	if i.Normalize() {
 		if err := e.Store.Save(i); err != nil {
 			return nil, err
 		}
@@ -72,7 +72,7 @@ func (e *Env) List() ([]*instance.Instance, error) {
 		return nil, err
 	}
 	for _, i := range list {
-		if i.Normalize(e.Platform.DefaultDNSMode()) {
+		if i.Normalize() {
 			if err := e.Store.Save(i); err != nil {
 				return nil, err
 			}
