@@ -34,7 +34,7 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 		inst.DNSMode = *ch.DNSMode
 		needsDaemon = true
 	}
-	_ = prevMode // used below once host-DNS wiring lands
+
 	if ch.WireguardPort != nil && *ch.WireguardPort != inst.WireguardPort {
 		inst.WireguardPort = *ch.WireguardPort
 		needsDaemon = true
@@ -58,10 +58,11 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 			return fmt.Errorf("instance %q: %w", inst.Name, err)
 		}
 		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{
-			ManagementURL: inst.ManagementURL,
-			InterfaceName: e.Platform.InterfaceHint(inst.Index),
-			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DNSMode.DNSDisableSys(),
+			ManagementURL:    inst.ManagementURL,
+			InterfaceName:    e.Platform.InterfaceHint(inst.Index),
+			WireguardPort:    p.WGPort,
+			DisableDNS:       inst.DNSMode.DNSDisableSys(),
+			CustomDNSAddress: customDNSAddress(inst, p),
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)
@@ -72,6 +73,12 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 			}
 		} else {
 			e.Printf("instance %q: settings saved — they take effect on the next `multibird down %s && sudo multibird up %s`", inst.Name, inst.Name, inst.Name)
+		}
+	}
+	// Leaving multibird mode orphans our dynamic-store keys — remove them.
+	if prevMode == instance.DNSMultibird && inst.DNSMode != instance.DNSMultibird {
+		if err := e.Platform.RemoveHostDNS(inst.Name); err != nil {
+			e.Warnf("instance %q: could not remove host DNS registration: %v", inst.Name, err)
 		}
 	}
 	return e.Store.Save(inst)

@@ -148,10 +148,11 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 			}
 		}
 		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{
-			ManagementURL: inst.ManagementURL,
-			InterfaceName: e.Platform.InterfaceHint(inst.Index),
-			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DNSMode.DNSDisableSys(),
+			ManagementURL:    inst.ManagementURL,
+			InterfaceName:    e.Platform.InterfaceHint(inst.Index),
+			WireguardPort:    p.WGPort,
+			DisableDNS:       inst.DNSMode.DNSDisableSys(),
+			CustomDNSAddress: customDNSAddress(inst, p),
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)
@@ -180,6 +181,12 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 				}
 			}
 		}
+	}
+
+	// Register the scoped resolvers (multibird DNS mode). A missing IP just
+	// means the engine is still connecting; the next status/sync backfills.
+	if err := e.applyHostDNSFromStatus(inst, st); err != nil {
+		e.Warnf("%v", err)
 	}
 
 	// Preflight: IP-range, routed-prefix and DNS-management conflicts against
@@ -233,6 +240,9 @@ func (e *Env) Down(ctx context.Context, inst *instance.Instance) error {
 			c.Close() //nolint:gosec // best-effort close of a status probe
 		}
 	}
+	if inst.DNSMode == instance.DNSMultibird {
+		e.removeHostDNSQuietly(inst.Name)
+	}
 	return daemon.Stop(p)
 }
 
@@ -242,6 +252,7 @@ func (e *Env) Remove(ctx context.Context, inst *instance.Instance, purge bool) e
 	if err := e.Down(ctx, inst); err != nil {
 		e.Warnf("instance %q: teardown before removal was incomplete: %v — `multibird nuke %s` cleans up leftovers", inst.Name, err, inst.Name)
 	}
+	e.removeHostDNSQuietly(inst.Name)
 	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
 	_ = os.Remove(p.SocketPath)
 	return e.Store.Remove(inst, purge)
@@ -249,7 +260,11 @@ func (e *Env) Remove(ctx context.Context, inst *instance.Instance, purge bool) e
 
 // Nuke forcefully cleans a crashed/half-up instance. Idempotent.
 func (e *Env) Nuke(inst *instance.Instance) []error {
-	return daemon.Nuke(inst.DeriveParams(e.Store.Root, e.Store.RunDir))
+	errs := daemon.Nuke(inst.DeriveParams(e.Store.Root, e.Store.RunDir))
+	if err := e.Platform.RemoveHostDNS(inst.Name); err != nil {
+		errs = append(errs, fmt.Errorf("removing host DNS registration: %w", err))
+	}
+	return errs
 }
 
 // InstanceStatus is the per-instance view for `multibird status` (and its
@@ -291,6 +306,9 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 					fs := st.GetFullStatus()
 					s.NetbirdIP = fs.GetLocalPeerState().GetIP()
 					s.Peers = len(fs.GetPeers())
+					if err := e.applyHostDNSFromStatus(inst, st); err != nil {
+						e.Warnf("%v", err)
+					}
 					// Backfill interface discovery: `up` may have returned
 					// while the engine was still connecting (no IP yet), so
 					// the recorded interface can be empty or stale.

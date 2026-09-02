@@ -102,6 +102,12 @@ type SetConfigParams struct {
 	InterfaceName string
 	WireguardPort int
 	DisableDNS    bool
+	// CustomDNSAddress pins the daemon's resolver listen address
+	// (multibird DNS mode). GOTCHA (v0.77.1 setConfigInputFromRequest):
+	// SetConfig persists customDNSAddress UNCONDITIONALLY — an absent field
+	// silently resets it — so every SetConfig call must state the intent:
+	// the address, or empty here (sent as the literal "empty") to clear.
+	CustomDNSAddress string
 }
 
 // SetConfig updates the daemon's persisted config. Takes effect on the next
@@ -110,10 +116,15 @@ func (c *Client) SetConfig(ctx context.Context, p SetConfigParams) error {
 	iface := p.InterfaceName
 	port := int64(p.WireguardPort)
 	dns := p.DisableDNS
+	customDNS := p.CustomDNSAddress
+	if customDNS == "" {
+		customDNS = "empty" // upstream's literal for "clear the setting"
+	}
 	req := &proto.SetConfigRequest{
 		// Each multibird daemon has exactly one profile: the default one.
 		// SetConfig requires a profile handle; "default" needs no username.
-		ProfileName:   "default",
+		ProfileName:      "default",
+		CustomDNSAddress: []byte(customDNS),
 		ManagementUrl: p.ManagementURL,
 		InterfaceName: &iface,
 		WireguardPort: &port,
