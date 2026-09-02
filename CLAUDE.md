@@ -167,6 +167,13 @@ fails if `TestedMax` != the go.mod pin. To bump:
   routes coexist cleanly. Plumbed via platform.DaemonEnv() → daemon.Start. Linux
   DaemonEnv is empty; whether Linux policy-routing tables collide between daemons is
   an open question for the next Linux multi-instance test.
+- **2026-09-02 — Login creates config.json; SetConfig only updates it**: verified in
+  v0.77.1 server.go — Login → UpdateOrCreateConfig, SetConfig → UpdateConfig (errors if
+  the file is missing). Up therefore orders Login → SetConfig → Up; the engine still
+  never starts on defaults because it only starts at Up. Field bug: fresh instances
+  failed with "config file does not exist" when SetConfig ran first (earlier testing
+  was masked by config.json left behind by the pre-3bed233 flow). On 0.76 SetConfig
+  CREATES the file instead — the integration test guards the tested-range semantics.
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 

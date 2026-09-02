@@ -22,6 +22,7 @@ import (
 	"github.com/magnetrong/multibird/internal/daemon"
 	"github.com/magnetrong/multibird/internal/instance"
 	"github.com/magnetrong/multibird/internal/nbgrpc"
+	"github.com/magnetrong/multibird/internal/version"
 )
 
 func TestIntegrationDaemonLifecycle(t *testing.T) {
@@ -58,6 +59,23 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 		t.Fatalf("status RPC: %v", err)
 	}
 	t.Logf("daemon status=%q version=%q", st.GetStatus(), st.GetDaemonVersion())
+
+	// Guard the Login-before-SetConfig ordering (see ops.Up): on a FRESH
+	// daemon with no config.json, SetConfig must fail — in the tested
+	// netbird range, SetConfig only updates an existing profile config and
+	// Login is what creates it. (Verified version-dependent: 0.76 happily
+	// creates the file instead, so only assert in-range.) If this fails on a
+	// new in-range version, upstream semantics changed: re-check the
+	// ordering in ops.Up before bumping TestedMax.
+	if in, verr := version.InTestedRange(st.GetDaemonVersion()); verr == nil && in {
+		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{ManagementURL: "https://example.invalid"})
+		if err == nil {
+			t.Fatal("SetConfig succeeded on a daemon with no config.json — upstream semantics changed, re-verify the Login/SetConfig ordering in ops.Up")
+		}
+		t.Logf("SetConfig before Login correctly refused: %v", err)
+	} else {
+		t.Logf("daemon %s outside tested range — skipping SetConfig-ordering guard", st.GetDaemonVersion())
+	}
 
 	if err := daemon.Stop(p); err != nil {
 		t.Fatalf("daemon.Stop: %v", err)

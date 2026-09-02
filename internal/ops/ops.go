@@ -87,20 +87,14 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 	}
 
 	if !inst.LoggedIn {
-		// Isolation parameters go through SetConfig: as of netbird v0.77,
-		// Login ignores every config field except managementUrl/PSK (see
-		// nbgrpc.LoginParams). SetConfig must run BEFORE Login/Up so the
-		// engine never starts on the defaults (utun100, port 51820 — both
-		// owned by a stock netbird install).
-		err := c.SetConfig(ctx, nbgrpc.SetConfigParams{
-			ManagementURL: inst.ManagementURL,
-			InterfaceName: e.Platform.InterfaceHint(inst.Index),
-			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DisableDNS,
-		})
-		if err != nil {
-			return fmt.Errorf("instance %q: %w", inst.Name, err)
-		}
+		// Order matters (verified against v0.77.1 client/server/server.go):
+		// Login CREATES config.json (UpdateOrCreateConfig) but ignores every
+		// config field except managementUrl/PSK, while SetConfig can only
+		// UPDATE an existing config.json (UpdateConfig errors otherwise).
+		// So: Login first (creates the file; the engine is NOT started yet),
+		// then SetConfig with the isolation params, and only then Up — the
+		// engine never runs on the defaults (utun100, port 51820, both owned
+		// by a stock netbird install).
 		hostname := instanceHostname(inst.Name)
 		ch, err := c.Login(ctx, nbgrpc.LoginParams{
 			SetupKey:      inst.SetupKey, // empty for SSO instances
@@ -118,6 +112,15 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 			if err := c.WaitSSOLogin(ctx, ch, hostname); err != nil {
 				return fmt.Errorf("instance %q: %w", inst.Name, err)
 			}
+		}
+		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{
+			ManagementURL: inst.ManagementURL,
+			InterfaceName: e.Platform.InterfaceHint(inst.Index),
+			WireguardPort: p.WGPort,
+			DisableDNS:    inst.DisableDNS,
+		})
+		if err != nil {
+			return fmt.Errorf("instance %q: %w", inst.Name, err)
 		}
 		inst.LoggedIn = true
 		if err := e.Store.Save(inst); err != nil {
