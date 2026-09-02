@@ -17,15 +17,69 @@ netbird auto-detects a host DNS manager, in order of preference:
    resolver will fight over it**. Last writer wins; on teardown ordering bugs the file
    can be left pointing at a dead resolver.
 
-## macOS
+## macOS: the verified collision (netbird v0.77.1, observed 2026-09-02)
 
-netbird drives `/usr/sbin/scutil`, writing dynamic-store keys
-(`State:/Network/Service/NetBird-*/DNS`). Match domains become scoped resolvers
-(visible in `scutil --dns`, not in resolv.conf); an instance claiming the *primary*
-resolver role causes macOS to regenerate /etc/resolv.conf. It does **not** write
-/etc/resolver/ files. Two instances with disjoint match domains coexist; two instances
-both claiming primary DNS conflict — the system picks by service order, effectively
-arbitrary from the user's perspective.
+netbird drives `/usr/sbin/scutil`, writing dynamic-store keys. The key names are
+FIXED format strings (`client/internal/dns/host_darwin.go:26-27`):
+`State:/Network/Service/NetBird-Match-0/DNS`, `NetBird-Search-0`, etc. Consequences,
+verified with two daemons (a multibird instance + a stock client of another mesh),
+each with disjoint split-DNS domains:
+
+- `addBatchedDomains` (line 414) makes EVERY daemon write its match domains to
+  `NetBird-Match-0`. scutil `set` replaces the whole dictionary, so the LAST daemon
+  to apply wins — disjoint domains do not help, the collision is on the key name.
+  Result: only one mesh's names resolve at any time, flipping on every network change
+  (each re-apply is a new "last writer").
+- `removeKeysContaining` (line 397) only removes keys the daemon itself created, so
+  this is overwrite, not deletion.
+- `discoverExistingKeys` (line 170): after an unclean shutdown a daemon removes EVERY
+  `NetBird-*` DNS key it finds — including another daemon's. Second collision path.
+
+Writing a UNIQUELY NAMED key by hand fixed it immediately and survived the other
+daemon's re-applies. That experiment is the design.
+
+## The arbiter: dns_mode=multibird (darwin only)
+
+On macOS multibird supersedes v1's "detect, explain, never arbitrate" policy: with
+`--dns-mode multibird` (the darwin default for new instances):
+
+- The daemon runs with `disable_dns=true` — its resolver keeps running (upstream
+  `server.go Initialize()` calls `service.Listen()` before the host-configurator
+  swap) and keeps forwarding nameserver groups and serving peer names; only the
+  host configuration is skipped.
+- The resolver listens on a FIXED per-instance address, `127.0.0.1:<5300+index>`,
+  pinned via `customDNSAddress` in every SetConfig call (upstream persists that
+  field unconditionally, so every call must state it; "empty" clears).
+- multibird derives the instance's scoped-resolver spec from live status (peer
+  domain = fqdn minus first label; nameserver-group match domains; in-addr.arpa /
+  ip6.arpa reverse zones mirroring upstream's rounding) and writes keys named
+  `State:/Network/Service/multibird-<instance>-(Match|Search)-<n>/DNS`, ≤50 domains
+  and ≤1500 bytes per key (upstream's own limits), followed by
+  `dscacheutil -flushcache` + `killall -HUP mDNSResponder`.
+- The `multibird-` prefix means stock netbird's `removeKeysContaining` /
+  `discoverExistingKeys` never touch our keys, and we never touch `NetBird-*`.
+- Registrations refresh on `up`, on every `status`, and via
+  `multibird dns sync [--watch]` (`--watch` re-applies on daemon NETWORK/DNS events;
+  suitable as a launchd KeepAlive job). `down`/`remove`/`nuke` remove the keys;
+  `doctor` reports strays.
+- Primary-resolver claims (a nameserver group with no match domains, i.e. route-all
+  DNS) are REFUSED in multibird mode: arbitrating a primary would fight the host's
+  own DNS exactly like the upstream bug. Use `--dns-mode native` on at most one
+  instance for that.
+
+Linux is unaffected (systemd-resolved settings are per link): `--dns-mode native`
+stays the default and `multibird` mode errors with guidance.
+
+## Testing DNS on macOS: the dig caveat
+
+`dig` reads /etc/resolv.conf and BYPASSES scoped resolvers — it will "prove" the
+setup broken while everything works. Test with:
+
+```
+dscacheutil -q host -a name peer.mesh.example
+ping peer.mesh.example
+scutil --dns        # inspect the registered scoped resolvers
+```
 
 ## The conflict, stated plainly
 
@@ -33,13 +87,14 @@ Safe: each mesh handles only its own DNS domains (split DNS), disjoint domain se
 Unsafe: more than one instance wants to manage the default/primary resolver, or their
 match domains overlap.
 
-## multibird v1 policy: detect, explain, never arbitrate
+## Policy: arbitrate placement (darwin), never arbitrate ownership
 
 - Preflight (v0.2 fully; v0.1 stub) inspects each instance's DNS intent and reports:
   which instances manage DNS, which domains, and whether anything overlaps.
-- Resolution is the **user's choice**, applied per instance via the `SetConfig` gRPC
-  request's `disable_dns` field (equivalent of `netbird up --disable-dns`), stored in
-  that instance's own config.json. Recommended pattern: the mesh whose DNS matters most
-  keeps DNS management; every other instance runs with DNS disabled or with split
-  domains configured server-side.
-- No automatic arbitration in v1. Period.
+- Resolution is the **user's choice** via `--dns-mode` per instance. Recommended
+  pattern on macOS: every multibird instance in `multibird` mode; at most one daemon
+  on the whole machine (typically stock netbird) in native mode. On Linux: native,
+  with disjoint domains server-side.
+- Domain-set overlaps between meshes are still detected and reported, never
+  auto-resolved — arbitration places resolvers, it does not decide which mesh owns
+  a contested domain.

@@ -69,8 +69,10 @@ pattern we recommend:
   multibird instances are CLI/TUI-only.
 - **No management-server features.** Client-side only.
 - **No Windows** in v1.
-- **No automatic DNS arbitration** in v1 — multibird detects DNS-management conflicts
-  between meshes, explains them, and lets you disable DNS or scope domains per instance.
+- **No DNS *ownership* arbitration** — multibird never decides which mesh owns a
+  contested domain. (On macOS it does arbitrate resolver *placement*: netbird daemons
+  overwrite each other's system DNS registrations there, so multibird registers
+  per-instance scoped resolvers itself — `--dns-mode multibird`, see docs/dns.md.)
 - **Never manages your stock NetBird install.**
 
 ## Requirements & privileges

@@ -74,6 +74,35 @@ func (e *Env) DNSSync(ctx context.Context, inst *instance.Instance) error {
 	return e.applyHostDNSFromStatus(inst, st)
 }
 
+// DNSCleanupStrays removes host DNS registrations owned by instance names
+// that no longer exist (crashed teardown, removed instances). Returns the
+// names cleaned.
+func (e *Env) DNSCleanupStrays() ([]string, error) {
+	owners, err := e.Platform.ListHostDNSOwners()
+	if err != nil {
+		return nil, fmt.Errorf("listing host DNS registrations: %w", err)
+	}
+	insts, err := e.List()
+	if err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, i := range insts {
+		known[i.Name] = true
+	}
+	var cleaned []string
+	for _, o := range owners {
+		if known[o] {
+			continue
+		}
+		if err := e.Platform.RemoveHostDNS(o); err != nil {
+			return cleaned, fmt.Errorf("removing stray host DNS of %q: %w", o, err)
+		}
+		cleaned = append(cleaned, o)
+	}
+	return cleaned, nil
+}
+
 // removeHostDNSQuietly is the best-effort teardown used by down/remove/nuke.
 func (e *Env) removeHostDNSQuietly(name string) {
 	if err := e.Platform.RemoveHostDNS(name); err != nil {

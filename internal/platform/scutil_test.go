@@ -116,6 +116,13 @@ noise line
 	}
 }
 
+func TestListScript(t *testing.T) {
+	got := listScript()
+	if !strings.Contains(got, "list State:/Network/Service/multibird-") || !strings.HasSuffix(got, "quit\n") {
+		t.Errorf("unexpected list script: %q", got)
+	}
+}
+
 func TestHostDNSKeysEmptySpec(t *testing.T) {
 	if keys := hostDNSKeys("vpn", hostdns.Spec{}); len(keys) != 0 {
 		t.Errorf("empty spec should produce no keys, got %v", keys)

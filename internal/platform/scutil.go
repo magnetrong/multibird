@@ -1,4 +1,4 @@
-// scutil.go holds the PURE parts of the macOS dynamic-store DNS writer:
+// This file (scutil.go) holds the PURE parts of the macOS dynamic-store DNS writer:
 // key naming, domain batching, script rendering and output parsing. No build
 // tag so the golden tests run on every OS; the exec wiring lives in
 // platform_darwin.go.
@@ -8,6 +8,7 @@
 // The `multibird-` prefix guarantees stock netbird's removeKeysContaining /
 // discoverExistingKeys (which act on `NetBird-*`) never touch our keys, and
 // we never touch theirs.
+
 package platform
 
 import (

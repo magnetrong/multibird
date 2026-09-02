@@ -31,8 +31,9 @@ of preflight gaps, since conflicts would then happen unattended at boot):
 1. Route-overlap preflight: routed-prefix overlap detection across instances
    (`ListNetworks` gRPC) with an OS routing-table "who wins" report
 2. DNS-management conflict preflight with per-instance disable-DNS / split-domain
-   guidance (no auto-arbitration); `multibird set <name>` to toggle instance settings
-   (e.g. `--disable-dns`) with re-login
+   guidance; `multibird set <name>` to toggle instance settings. ("No
+   auto-arbitration" superseded on macOS 2026-09-02: `dns_mode=multibird` makes
+   multibird the darwin DNS arbiter — see docs/dns.md and the Decisions log.)
 3. `logs <name> [-f]` tailing per-instance daemon log files
 4. SSO login (`WaitSSOLogin` browser flow); `up --all` fails SSO-pending instances
    with a clear message and continues the others
@@ -47,6 +48,10 @@ Acceptance criteria:
 - An SSO-only NetBird account can be added and brought up with no setup key. ✅ **VERIFIED 2026-08-31** against app.netbird.io (browser PKCE flow, including retry after pending email verification).
 - A macOS and a Linux box both reconnect all installed instances after reboot with no manual step. (implemented; reboot behavior NOT yet tested on either OS)
 - Docs `dns.md` / `privileges.md` reflect verified behavior, not assumptions.
+- macOS DNS arbitration: with stock netbird (mesh A) + a multibird-mode instance
+  (mesh B) on one Mac, names of BOTH meshes resolve simultaneously, keep resolving
+  across network changes and down/up, and `down|remove|nuke` leave no multibird-*
+  DNS keys (`doctor` reports strays).
 
 Open questions carried out of v0.2 field testing:
 - **Linux multi-instance routing**: does netbird's Linux advanced routing (policy

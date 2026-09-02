@@ -177,6 +177,22 @@ fails if `TestedMax` != the go.mod pin. To bump:
 - **2026-08-31 — TESTED_VERSIONS seed**: pinned module and TestedMax start at v0.77.1
   (latest release at init time); TestedMin 0.77.0.
 
+- **2026-09-02 — macOS DNS arbitration (supersedes "never arbitrate", darwin only)**:
+  verified on macOS with netbird v0.77.1 that two daemons corrupt each other's DNS:
+  host_darwin.go writes FIXED key names (`NetBird-Match-0` etc., lines 26-27/414), so
+  the last daemon to apply wins regardless of disjoint domains, and
+  `discoverExistingKeys` (line 170) deletes other daemons' keys after unclean
+  shutdowns. multibird now arbitrates on darwin: `dns_mode=multibird` (darwin default)
+  runs the daemon with disable_dns=true + a fixed `customDNSAddress`
+  (127.0.0.1:<5300+index>) and multibird writes uniquely named keys
+  `State:/Network/Service/multibird-<instance>-(Match|Search)-<n>/DNS` — the naming
+  contract that keeps stock netbird's cleanup paths and ours mutually invisible.
+  GOTCHA: upstream SetConfig persists customDNSAddress UNCONDITIONALLY (an absent
+  field silently clears it), so every SetConfig call states it ("empty" to clear).
+  Batching mirrors upstream's real limits (50 domains/1500 bytes per key — the
+  brief's 99 is only scutil's theoretical cap). Primary-resolver (route-all) claims
+  are refused in multibird mode. Linux keeps native netbird DNS management;
+  arbitration never decides domain OWNERSHIP conflicts, only resolver placement.
 ## Style
 
 Standard Go. No clever abstractions, no frameworks beyond cobra/bubbletea/toml. Wrap

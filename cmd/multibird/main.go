@@ -565,8 +565,18 @@ func dnsSyncCmd() *cobra.Command {
 				}
 				fmt.Printf("%s: dns synced\n", i.Name)
 			}
+			if len(args) == 0 { // full sync also sweeps strays of removed instances
+				cleaned, err := e.DNSCleanupStrays()
+				if err != nil {
+					failed++
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				}
+				for _, o := range cleaned {
+					fmt.Printf("%s: stray dns registration removed\n", o)
+				}
+			}
 			if failed > 0 {
-				return fmt.Errorf("%d instance(s) failed to sync", failed)
+				return fmt.Errorf("%d sync step(s) failed", failed)
 			}
 			return nil
 		},
