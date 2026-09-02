@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/magnetrong/multibird/internal/hostdns"
 	"github.com/magnetrong/multibird/internal/instance"
 )
 
@@ -71,3 +72,18 @@ func parseRouteDev(out string) (string, error) {
 	}
 	return "", fmt.Errorf("no device in route lookup output %q", strings.TrimSpace(out))
 }
+
+// ApplyHostDNS: the multibird DNS mode is darwin-only; Linux keeps netbird's
+// native per-link DNS management.
+func (linuxPlatform) ApplyHostDNS(instanceName string, _ hostdns.Spec) error {
+	return fmt.Errorf("instance %q: dns_mode multibird is not supported on linux — use `multibird set %s --dns-mode native` (netbird's systemd-resolved integration is per-link and coexists fine)", instanceName, instanceName)
+}
+
+// RemoveHostDNS is a no-op on linux (nothing is ever registered).
+func (linuxPlatform) RemoveHostDNS(string) error { return nil }
+
+// ListHostDNSOwners: nothing is ever registered on linux.
+func (linuxPlatform) ListHostDNSOwners() ([]string, error) { return nil, nil }
+
+// StockNetbirdDNSPresent: the darwin dynamic-store collision doesn't exist here.
+func (linuxPlatform) StockNetbirdDNSPresent() (bool, error) { return false, nil }

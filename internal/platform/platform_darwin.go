@@ -11,10 +11,107 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/magnetrong/multibird/internal/hostdns"
 	"github.com/magnetrong/multibird/internal/instance"
 )
 
 type darwinPlatform struct{}
+
+// scutilRunner runs one scutil stdin script; swapped out in tests so unit
+// tests never exec scutil.
+type scutilRunner func(script string) (string, error)
+
+func execScutil(script string) (string, error) {
+	cmd := exec.Command("/usr/sbin/scutil")
+	cmd.Stdin = strings.NewReader(script)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("scutil: %w: %s (host DNS changes need root — try sudo)", err, out)
+	}
+	return string(out), nil
+}
+
+var runScutil scutilRunner = execScutil
+
+// listMultibirdKeys returns every multibird-owned dynamic-store DNS key.
+func listMultibirdKeys() ([]string, error) {
+	out, err := runScutil(listScript())
+	if err != nil {
+		return nil, err
+	}
+	return parseListedKeys(out), nil
+}
+
+// flushDNSCache mirrors upstream host_darwin.go flushDNSCache.
+func flushDNSCache() error {
+	if out, err := exec.Command("/usr/bin/dscacheutil", "-flushcache").CombinedOutput(); err != nil {
+		return fmt.Errorf("dscacheutil -flushcache: %w: %s", err, out)
+	}
+	if out, err := exec.Command("killall", "-HUP", "mDNSResponder").CombinedOutput(); err != nil {
+		return fmt.Errorf("killall -HUP mDNSResponder: %w: %s", err, out)
+	}
+	return nil
+}
+
+// ApplyHostDNS writes the instance's scoped resolvers: remove its stale keys,
+// set the new ones, flush the resolver cache. Idempotent.
+func (darwinPlatform) ApplyHostDNS(instanceName string, spec hostdns.Spec) error {
+	existing, err := listMultibirdKeys()
+	if err != nil {
+		return fmt.Errorf("listing dynamic-store keys: %w", err)
+	}
+	stale := keysOfInstance(existing, instanceName)
+	keys := hostDNSKeys(instanceName, spec)
+	if len(stale) == 0 && len(keys) == 0 {
+		return nil
+	}
+	if _, err := runScutil(renderApplyScript(stale, keys, spec.Listen)); err != nil {
+		return fmt.Errorf("writing DNS keys for %q: %w", instanceName, err)
+	}
+	if err := flushDNSCache(); err != nil {
+		return fmt.Errorf("DNS keys for %q written but cache flush failed: %w", instanceName, err)
+	}
+	return nil
+}
+
+// RemoveHostDNS removes every key the instance owns. Idempotent.
+func (darwinPlatform) RemoveHostDNS(instanceName string) error {
+	existing, err := listMultibirdKeys()
+	if err != nil {
+		return fmt.Errorf("listing dynamic-store keys: %w", err)
+	}
+	keys := keysOfInstance(existing, instanceName)
+	if len(keys) == 0 {
+		return nil
+	}
+	if _, err := runScutil(renderRemoveScript(keys)); err != nil {
+		return fmt.Errorf("removing DNS keys for %q: %w", instanceName, err)
+	}
+	if err := flushDNSCache(); err != nil {
+		return fmt.Errorf("DNS keys for %q removed but cache flush failed: %w", instanceName, err)
+	}
+	return nil
+}
+
+// ListHostDNSOwners lists instance names with registered keys.
+func (darwinPlatform) ListHostDNSOwners() ([]string, error) {
+	keys, err := listMultibirdKeys()
+	if err != nil {
+		return nil, err
+	}
+	return ownersFromKeys(keys), nil
+}
+
+// StockNetbirdDNSPresent checks for stock netbird's own DNS keys
+// (State:/Network/Service/NetBird-*), the ones subject to the upstream
+// fixed-name collision.
+func (darwinPlatform) StockNetbirdDNSPresent() (bool, error) {
+	out, err := runScutil("list State:/Network/Service/NetBird-.*/DNS\nquit\n")
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(out, "State:/Network/Service/NetBird-"), nil
+}
 
 func newPlatform() Platform { return darwinPlatform{} }
 

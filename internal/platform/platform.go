@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/magnetrong/multibird/internal/hostdns"
 	"github.com/magnetrong/multibird/internal/instance"
 )
 
@@ -43,6 +44,23 @@ type Platform interface {
 	// DefaultDNSMode is the dns_mode for NEW instances: multibird (the DNS
 	// arbiter) on darwin, native on linux — see docs/dns.md.
 	DefaultDNSMode() instance.DNSMode
+
+	// ApplyHostDNS registers/refreshes the instance's scoped resolvers with
+	// the host (darwin: multibird-<name>-* dynamic-store keys). Idempotent.
+	ApplyHostDNS(instanceName string, spec hostdns.Spec) error
+
+	// RemoveHostDNS removes the instance's host DNS registration. No-op when
+	// nothing is registered (and always on linux).
+	RemoveHostDNS(instanceName string) error
+
+	// ListHostDNSOwners returns the instance names that currently have host
+	// DNS registrations (nil on linux).
+	ListHostDNSOwners() ([]string, error)
+
+	// StockNetbirdDNSPresent reports whether a NON-multibird netbird daemon
+	// (stock install) currently manages host DNS — doctor uses it to warn
+	// about the upstream key collision. Always false on linux.
+	StockNetbirdDNSPresent() (bool, error)
 
 	// DaemonEnv returns extra environment variables for spawned netbird
 	// daemons — OS-specific coexistence settings (e.g. disabling netbird's
