@@ -125,10 +125,10 @@ func (c *Client) SetConfig(ctx context.Context, p SetConfigParams) error {
 		// SetConfig requires a profile handle; "default" needs no username.
 		ProfileName:      "default",
 		CustomDNSAddress: []byte(customDNS),
-		ManagementUrl: p.ManagementURL,
-		InterfaceName: &iface,
-		WireguardPort: &port,
-		DisableDns:    &dns,
+		ManagementUrl:    p.ManagementURL,
+		InterfaceName:    &iface,
+		WireguardPort:    &port,
+		DisableDns:       &dns,
 	}
 	if _, err := c.d.SetConfig(ctx, req); err != nil {
 		return fmt.Errorf("updating daemon config: %w", err)

@@ -90,10 +90,10 @@ type DNSConflict struct {
 func (c DNSConflict) String() string {
 	switch c.Kind {
 	case "primary":
-		return fmt.Sprintf("instances %s all want to manage the host's primary DNS resolver — only one can win (last writer, or arbitrary service order on macOS). Fix: keep DNS on the mesh whose DNS matters most and run the others with `multibird set <name> --dns-mode disabled`, or configure split DNS domains server-side (see docs/dns.md)",
+		return fmt.Sprintf("instances %s all want to manage the host's primary DNS resolver — only one can win (last writer, or arbitrary service order on macOS). Fix: keep DNS on the mesh whose DNS matters most and run the others with `multibird set <name> --dns-mode disabled` (or, on macOS with split domains, `--dns-mode multibird` — see docs/dns.md)",
 			strings.Join(c.Instances, ", "))
 	default:
-		return fmt.Sprintf("instances %s both serve DNS for domain %q — lookups will land on an arbitrary mesh. Fix: make the domain sets disjoint server-side, or disable DNS on one instance (see docs/dns.md)",
+		return fmt.Sprintf("instances %s both serve DNS for domain %q — lookups will land on an arbitrary mesh even with multibird arbitration. Fix: make the domain sets disjoint server-side, or disable DNS on one instance (see docs/dns.md)",
 			strings.Join(c.Instances, ", "), c.Domain)
 	}
 }

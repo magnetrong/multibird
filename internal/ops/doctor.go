@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/magnetrong/multibird/internal/daemon"
+	"github.com/magnetrong/multibird/internal/instance"
 	"github.com/magnetrong/multibird/internal/nbcli"
 	"github.com/magnetrong/multibird/internal/version"
 )
@@ -24,7 +25,7 @@ type Check struct {
 func (e *Env) Doctor(ctx context.Context) []Check {
 	var out []Check
 
-	insts, err := e.Store.List()
+	insts, err := e.List()
 	if err != nil {
 		out = append(out, Check{Name: "config root", OK: false, Detail: err.Error()})
 		insts = nil
@@ -84,6 +85,41 @@ func (e *Env) Doctor(ctx context.Context) []Check {
 	if conflicts, err := e.conflictsInvolving(ctx, ""); err == nil {
 		for _, cf := range conflicts {
 			out = append(out, Check{Name: "running conflicts", OK: true, Warn: true, Detail: cf})
+		}
+	}
+
+	// Host DNS registrations (darwin): stray keys from removed/crashed
+	// instances, and native-mode daemons that collide in the dynamic store.
+	if owners, err := e.Platform.ListHostDNSOwners(); err == nil {
+		known := map[string]bool{}
+		for _, i := range insts {
+			known[i.Name] = true
+		}
+		strays := 0
+		for _, o := range owners {
+			if !known[o] {
+				strays++
+				out = append(out, Check{Name: "host dns", OK: true, Warn: true,
+					Detail: fmt.Sprintf("dynamic-store DNS keys belong to unknown instance %q — remove them with `sudo multibird dns sync` (with the instance gone they are cleaned) or manually via scutil", o)})
+			}
+		}
+		if strays == 0 {
+			out = append(out, Check{Name: "host dns", OK: true, Detail: "no stray multibird-* DNS registrations"})
+		}
+	} else {
+		out = append(out, Check{Name: "host dns", OK: true, Warn: true, Detail: fmt.Sprintf("could not inspect dynamic store: %v", err)})
+	}
+	nativeCount := 0
+	for _, i := range insts {
+		if i.DNSMode == instance.DNSNative {
+			nativeCount++
+		}
+	}
+	if e.Platform.DefaultDNSMode() == instance.DNSMultibird { // darwin
+		stock, _ := e.Platform.StockNetbirdDNSPresent()
+		if nativeCount >= 2 || (nativeCount >= 1 && stock) {
+			out = append(out, Check{Name: "host dns", OK: true, Warn: true,
+				Detail: "multiple netbird daemons manage macOS DNS natively — upstream writes fixed-name NetBird-Match-0 keys, so the last daemon to apply wins and the others' names stop resolving (docs/dns.md). Fix: `multibird set <name> --dns-mode multibird` on every multibird instance; at most one daemon (e.g. stock netbird) may stay native"})
 		}
 	}
 
