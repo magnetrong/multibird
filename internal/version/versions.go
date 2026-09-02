@@ -52,6 +52,19 @@ const (
 	TestedMax = "0.77.1"
 )
 
+// Compare returns -1, 0 or 1 ordering two semver strings ("0.3.0", "v0.3.0").
+func Compare(a, b string) (int, error) {
+	pa, err := parse(a)
+	if err != nil {
+		return 0, err
+	}
+	pb, err := parse(b)
+	if err != nil {
+		return 0, err
+	}
+	return cmp(pa, pb), nil
+}
+
 // InTestedRange reports whether a netbird version string (e.g. "0.77.1" or
 // "v0.77.1") falls within [TestedMin, TestedMax]. Unparseable versions return
 // an error so callers can warn rather than guess.

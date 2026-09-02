@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -18,6 +19,7 @@ import (
 	"github.com/magnetrong/multibird/internal/instance"
 	"github.com/magnetrong/multibird/internal/ops"
 	"github.com/magnetrong/multibird/internal/persist"
+	"github.com/magnetrong/multibird/internal/selfupdate"
 	"github.com/magnetrong/multibird/internal/tui"
 	"github.com/magnetrong/multibird/internal/version"
 )
@@ -66,7 +68,7 @@ func rootCmd() *cobra.Command {
 	}
 	root.AddCommand(addCmd(), upCmd(), downCmd(), statusCmd(), listCmd(),
 		removeCmd(), doctorCmd(), nukeCmd(), setCmd(), logsCmd(),
-		installCmd(), uninstallCmd(), tuiCmd())
+		installCmd(), uninstallCmd(), upgradeCmd(), tuiCmd())
 	return root
 }
 
@@ -495,6 +497,47 @@ func logsCmd() *cobra.Command {
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing new log lines")
 	c.Flags().IntVar(&tailKB, "tail", 64, "how many KiB of history to print first")
+	return c
+}
+
+func upgradeCmd() *cobra.Command {
+	var check, force bool
+	c := &cobra.Command{
+		Use:   "upgrade",
+		Short: "Upgrade multibird to the latest GitHub release",
+		Long:  "Downloads the latest release from github.com/" + selfupdate.Repo + ",\nverifies its checksum, and replaces this binary in place. Running\ninstances are untouched — the netbird daemons keep their connections.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rel, err := selfupdate.LatestRelease(cmd.Context())
+			if err != nil {
+				return err
+			}
+			cur := version.Version
+			if cur == "dev" {
+				if !force {
+					return fmt.Errorf("this multibird was built from source (version %s) — upgrade with `git pull && go build ./cmd/multibird`, or pass --force to replace it with release %s", version.Full(), rel.Tag)
+				}
+			} else if cmpRes, err := version.Compare(cur, rel.Version()); err == nil && cmpRes >= 0 && !force {
+				fmt.Printf("already up to date (%s; latest release is %s)\n", cur, rel.Tag)
+				return nil
+			}
+			if check {
+				fmt.Printf("upgrade available: %s -> %s (run `multibird upgrade` to install)\n", version.Full(), rel.Tag)
+				return nil
+			}
+			bin, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("locating the running binary: %w", err)
+			}
+			if err := selfupdate.Apply(cmd.Context(), rel, runtime.GOOS, runtime.GOARCH, bin); err != nil {
+				return err
+			}
+			fmt.Printf("upgraded %s -> %s (%s)\nrunning instances are unaffected; daemon-spawn changes apply on the next `down` + `up`\n", version.Full(), rel.Tag, bin)
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&check, "check", false, "only report whether an upgrade is available")
+	c.Flags().BoolVar(&force, "force", false, "install even if this build is newer, equal, or built from source")
 	return c
 }
 
