@@ -136,6 +136,18 @@ func (c *Client) SetConfig(ctx context.Context, p SetConfigParams) error {
 	return nil
 }
 
+// Events subscribes to the daemon's system-event stream. Callers receive the
+// raw stream and own its lifetime (it ends when ctx is canceled or the
+// daemon goes away). Used by `multibird dns sync --watch` to re-sync on
+// NETWORK/DNS events.
+func (c *Client) Events(ctx context.Context) (proto.DaemonService_SubscribeEventsClient, error) {
+	stream, err := c.d.SubscribeEvents(ctx, &proto.SubscribeRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("subscribing to daemon events: %w", err)
+	}
+	return stream, nil
+}
+
 // Network is one route/network the mesh offers this peer.
 type Network struct {
 	ID       string

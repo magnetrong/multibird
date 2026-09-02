@@ -68,7 +68,7 @@ func rootCmd() *cobra.Command {
 	}
 	root.AddCommand(addCmd(), upCmd(), downCmd(), statusCmd(), listCmd(),
 		removeCmd(), doctorCmd(), nukeCmd(), setCmd(), logsCmd(),
-		installCmd(), uninstallCmd(), upgradeCmd(), tuiCmd())
+		installCmd(), uninstallCmd(), upgradeCmd(), dnsCmd(), tuiCmd())
 	return root
 }
 
@@ -522,6 +522,57 @@ func logsCmd() *cobra.Command {
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing new log lines")
 	c.Flags().IntVar(&tailKB, "tail", 64, "how many KiB of history to print first")
+	return c
+}
+
+func dnsCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "dns",
+		Short: "Host DNS arbitration (multibird dns_mode, macOS)",
+	}
+	c.AddCommand(dnsSyncCmd())
+	return c
+}
+
+func dnsSyncCmd() *cobra.Command {
+	var all, watch bool
+	c := &cobra.Command{
+		Use:               "sync [name]",
+		Short:             "Re-apply host DNS registrations for multibird-mode instances",
+		Long:              "Re-derives each instance's scoped resolvers from live daemon status and\nrewrites the host registration (idempotent; also cleans up when a daemon\nis down). --watch keeps doing it on daemon NETWORK/DNS events until\ninterrupted — suitable as a launchd KeepAlive job.",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeInstanceNames,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			insts, err := targets(e, args, all || (len(args) == 0 && !all))
+			if err != nil {
+				return err
+			}
+			if watch {
+				fmt.Println("watching daemon events; Ctrl-C to stop")
+				e.DNSWatch(cmd.Context(), insts)
+				return nil
+			}
+			var failed int
+			for _, i := range insts {
+				if err := e.DNSSync(cmd.Context(), i); err != nil {
+					failed++
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					continue
+				}
+				fmt.Printf("%s: dns synced\n", i.Name)
+			}
+			if failed > 0 {
+				return fmt.Errorf("%d instance(s) failed to sync", failed)
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "sync every instance (default when no name is given)")
+	c.Flags().BoolVar(&watch, "watch", false, "keep syncing on daemon events until interrupted")
 	return c
 }
 

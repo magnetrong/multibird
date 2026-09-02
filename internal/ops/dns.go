@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/magnetrong/multibird/internal/daemon"
@@ -77,5 +78,118 @@ func (e *Env) DNSSync(ctx context.Context, inst *instance.Instance) error {
 func (e *Env) removeHostDNSQuietly(name string) {
 	if err := e.Platform.RemoveHostDNS(name); err != nil {
 		e.Warnf("instance %q: could not remove host DNS registration: %v — run `sudo multibird dns sync %s`", name, err, name)
+	}
+}
+
+// DNSWatch keeps the host DNS registrations of the given instances in sync
+// until ctx is canceled: it subscribes to each multibird-mode daemon's event
+// stream and re-applies on NETWORK/DNS events (debounced), polls status every
+// 60s as a fallback, survives daemon restarts (reconnect loop), and removes
+// an instance's keys while its daemon is down.
+func (e *Env) DNSWatch(ctx context.Context, insts []*instance.Instance) {
+	var wg sync.WaitGroup
+	for _, inst := range insts {
+		if inst.DNSMode != instance.DNSMultibird {
+			continue
+		}
+		wg.Add(1)
+		go func(inst *instance.Instance) {
+			defer wg.Done()
+			e.watchOne(ctx, inst)
+		}(inst)
+	}
+	wg.Wait()
+}
+
+const (
+	watchDebounce  = 2 * time.Second
+	watchPoll      = 60 * time.Second
+	watchReconnect = 10 * time.Second
+)
+
+func (e *Env) watchOne(ctx context.Context, inst *instance.Instance) {
+	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
+	downCleaned := false
+	for ctx.Err() == nil {
+		if !daemon.Running(p) {
+			if !downCleaned {
+				e.removeHostDNSQuietly(inst.Name)
+				downCleaned = true
+			}
+			sleepCtx(ctx, watchReconnect)
+			continue
+		}
+		downCleaned = false
+		if err := e.watchConnected(ctx, inst, p); err != nil && ctx.Err() == nil {
+			e.Warnf("instance %q: dns watch: %v — reconnecting", inst.Name, err)
+			sleepCtx(ctx, watchReconnect)
+		}
+	}
+}
+
+// watchConnected holds one connection to the daemon: initial sync, event
+// stream with debounce, periodic fallback poll. Returns when the stream
+// breaks (daemon restart) or ctx ends.
+func (e *Env) watchConnected(ctx context.Context, inst *instance.Instance, p instance.Params) error {
+	c, err := nbgrpc.Dial(p.SocketPath)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := e.DNSSync(ctx, inst); err != nil {
+		e.Warnf("%v", err)
+	}
+
+	stream, err := c.Events(ctx)
+	if err != nil {
+		return err
+	}
+	events := make(chan proto.SystemEvent_Category, 8)
+	errc := make(chan error, 1)
+	go func() {
+		for {
+			ev, err := stream.Recv()
+			if err != nil {
+				errc <- err
+				return
+			}
+			select {
+			case events <- ev.GetCategory():
+			default: // debounce pending anyway; drop bursts
+			}
+		}
+	}()
+
+	var debounce <-chan time.Time
+	poll := time.NewTicker(watchPoll)
+	defer poll.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-errc:
+			return err
+		case cat := <-events:
+			if cat == proto.SystemEvent_NETWORK || cat == proto.SystemEvent_DNS {
+				debounce = time.After(watchDebounce)
+			}
+		case <-debounce:
+			debounce = nil
+			if err := e.DNSSync(ctx, inst); err != nil {
+				e.Warnf("%v", err)
+			}
+		case <-poll.C:
+			if err := e.DNSSync(ctx, inst); err != nil {
+				e.Warnf("%v", err)
+			}
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
 	}
 }
