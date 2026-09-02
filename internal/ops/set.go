@@ -13,7 +13,7 @@ import (
 // SetChanges are the mutable per-instance settings for `multibird set`.
 // Nil pointer = leave unchanged.
 type SetChanges struct {
-	DisableDNS    *bool
+	DNSMode       *instance.DNSMode
 	WireguardPort *int
 	NetbirdBin    *string
 }
@@ -29,10 +29,12 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 		inst.NetbirdBin = *ch.NetbirdBin
 	}
 	needsDaemon := false
-	if ch.DisableDNS != nil && *ch.DisableDNS != inst.DisableDNS {
-		inst.DisableDNS = *ch.DisableDNS
+	prevMode := inst.DNSMode
+	if ch.DNSMode != nil && *ch.DNSMode != inst.DNSMode {
+		inst.DNSMode = *ch.DNSMode
 		needsDaemon = true
 	}
+	_ = prevMode // used below once host-DNS wiring lands
 	if ch.WireguardPort != nil && *ch.WireguardPort != inst.WireguardPort {
 		inst.WireguardPort = *ch.WireguardPort
 		needsDaemon = true
@@ -59,7 +61,7 @@ func (e *Env) Set(ctx context.Context, inst *instance.Instance, ch SetChanges) e
 			ManagementURL: inst.ManagementURL,
 			InterfaceName: e.Platform.InterfaceHint(inst.Index),
 			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DisableDNS,
+			DisableDNS:    inst.DNSMode.DNSDisableSys(),
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)

@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/magnetrong/multibird/internal/instance"
 )
 
 type darwinPlatform struct{}
@@ -50,6 +52,11 @@ func (darwinPlatform) InterfaceHint(i int) string {
 		}
 	}
 }
+
+// DefaultDNSMode: macOS dynamic-store DNS keys collide between netbird
+// daemons (fixed-name NetBird-Match-0 keys — docs/dns.md), so new instances
+// default to multibird-arbitrated DNS.
+func (darwinPlatform) DefaultDNSMode() instance.DNSMode { return instance.DNSMultibird }
 
 func (darwinPlatform) DiscoverInterface(addr netip.Addr) (string, error) {
 	return discoverByAddr(addr)

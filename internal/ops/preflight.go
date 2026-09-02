@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/magnetrong/multibird/internal/instance"
+
 	"github.com/magnetrong/multibird/internal/daemon"
 	"github.com/magnetrong/multibird/internal/nbgrpc"
 	"github.com/magnetrong/multibird/internal/preflight"
@@ -48,7 +50,8 @@ func (e *Env) snapshotRunning(ctx context.Context) ([]runningSnapshot, error) {
 			iface: inst.Interface,
 			dnsIntent: preflight.DNSIntent{
 				Instance:   inst.Name,
-				ManagesDNS: !inst.DisableDNS,
+				ManagesDNS: inst.DNSMode != instance.DNSDisabled,
+				Mode:       string(inst.DNSMode),
 				Domains:    nbgrpc.DNSDomains(st),
 			},
 		}

@@ -38,7 +38,7 @@ func env() (*ops.Env, error) { return ops.NewEnv() }
 // forEach resolves name-or---all into the target instances.
 func targets(e *ops.Env, args []string, all bool) ([]*instance.Instance, error) {
 	if all {
-		list, err := e.Store.List()
+		list, err := e.List()
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +50,7 @@ func targets(e *ops.Env, args []string, all bool) ([]*instance.Instance, error) 
 	if len(args) != 1 {
 		return nil, errors.New("specify an instance name or --all")
 	}
-	i, err := e.Store.Load(args[0])
+	i, err := e.Load(args[0])
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func completeInstanceNames(_ *cobra.Command, args []string, _ string) ([]string,
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	insts, err := e.Store.List()
+	insts, err := e.List()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -93,7 +93,7 @@ func completeInstanceNames(_ *cobra.Command, args []string, _ string) ([]string,
 }
 
 func addCmd() *cobra.Command {
-	var mgmtURL, setupKey, nbBin string
+	var mgmtURL, setupKey, nbBin, dnsMode string
 	var sso, disableDNS bool
 	var wgPort int
 	c := &cobra.Command{
@@ -110,7 +110,17 @@ func addCmd() *cobra.Command {
 			}
 			inst := &instance.Instance{
 				Name: args[0], ManagementURL: mgmtURL, SetupKey: setupKey,
-				SSO: sso, NetbirdBin: nbBin, WireguardPort: wgPort, DisableDNS: disableDNS,
+				SSO: sso, NetbirdBin: nbBin, WireguardPort: wgPort,
+			}
+			if disableDNS {
+				dnsMode = string(instance.DNSDisabled)
+			}
+			if dnsMode != "" {
+				m, err := instance.ParseDNSMode(dnsMode)
+				if err != nil {
+					return err
+				}
+				inst.DNSMode = m
 			}
 			if err := e.Add(inst); err != nil {
 				return err
@@ -124,7 +134,9 @@ func addCmd() *cobra.Command {
 	c.Flags().BoolVar(&sso, "sso", false, "use SSO login instead of a setup key (browser flow runs on first `up`)")
 	c.Flags().StringVar(&nbBin, "netbird-bin", "", "pin this instance to a specific netbird binary")
 	c.Flags().IntVar(&wgPort, "wireguard-port", 0, "override the derived WireGuard listen port")
-	c.Flags().BoolVar(&disableDNS, "disable-dns", false, "don't let this instance manage host DNS (see docs/dns.md)")
+	c.Flags().StringVar(&dnsMode, "dns-mode", "", "who manages host DNS: native, multibird or disabled (default: per-OS, see docs/dns.md)")
+	c.Flags().BoolVar(&disableDNS, "disable-dns", false, "deprecated alias for --dns-mode disabled")
+	_ = c.Flags().MarkDeprecated("disable-dns", "use --dns-mode disabled")
 	_ = c.MarkFlagRequired("management-url")
 	return c
 }
@@ -213,12 +225,12 @@ func statusCmd() *cobra.Command {
 			}
 			var insts []*instance.Instance
 			if len(args) == 1 {
-				i, err := e.Store.Load(args[0])
+				i, err := e.Load(args[0])
 				if err != nil {
 					return err
 				}
 				insts = []*instance.Instance{i}
-			} else if insts, err = e.Store.List(); err != nil {
+			} else if insts, err = e.List(); err != nil {
 				return err
 			}
 			sts := e.Status(cmd.Context(), insts)
@@ -250,7 +262,7 @@ func listCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			insts, err := e.Store.List()
+			insts, err := e.List()
 			if err != nil {
 				return err
 			}
@@ -266,10 +278,7 @@ func listCmd() *cobra.Command {
 				if bin == "" {
 					bin = "(PATH)"
 				}
-				dns := "managed"
-				if i.DisableDNS {
-					dns = "disabled"
-				}
+				dns := string(i.DNSMode)
 				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\t%s\n", i.Name, i.ManagementURL, i.Index, p.WGPort, bin, dns)
 			}
 			return w.Flush()
@@ -289,7 +298,7 @@ func removeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := e.Store.Load(args[0])
+			i, err := e.Load(args[0])
 			if err != nil {
 				return err
 			}
@@ -367,7 +376,7 @@ func nukeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := e.Store.Load(args[0])
+			i, err := e.Load(args[0])
 			if err != nil {
 				return err
 			}
@@ -396,7 +405,7 @@ func installCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := e.Store.Load(args[0])
+			i, err := e.Load(args[0])
 			if err != nil {
 				return err
 			}
@@ -442,14 +451,28 @@ func setCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := e.Store.Load(args[0])
+			i, err := e.Load(args[0])
 			if err != nil {
 				return err
 			}
 			var ch ops.SetChanges
+			if cmd.Flags().Changed("dns-mode") {
+				v, _ := cmd.Flags().GetString("dns-mode")
+				m, err := instance.ParseDNSMode(v)
+				if err != nil {
+					return err
+				}
+				ch.DNSMode = &m
+			}
 			if cmd.Flags().Changed("disable-dns") {
-				v, _ := cmd.Flags().GetBool("disable-dns")
-				ch.DisableDNS = &v
+				if ch.DNSMode != nil {
+					return errors.New("pass either --dns-mode or the deprecated --disable-dns, not both")
+				}
+				m := instance.DNSNative
+				if v, _ := cmd.Flags().GetBool("disable-dns"); v {
+					m = instance.DNSDisabled
+				}
+				ch.DNSMode = &m
 			}
 			if cmd.Flags().Changed("wireguard-port") {
 				v, _ := cmd.Flags().GetInt("wireguard-port")
@@ -459,8 +482,8 @@ func setCmd() *cobra.Command {
 				v, _ := cmd.Flags().GetString("netbird-bin")
 				ch.NetbirdBin = &v
 			}
-			if ch.DisableDNS == nil && ch.WireguardPort == nil && ch.NetbirdBin == nil {
-				return errors.New("nothing to change — pass --disable-dns, --wireguard-port and/or --netbird-bin")
+			if ch.DNSMode == nil && ch.WireguardPort == nil && ch.NetbirdBin == nil {
+				return errors.New("nothing to change — pass --dns-mode, --wireguard-port and/or --netbird-bin")
 			}
 			if err := e.Set(cmd.Context(), i, ch); err != nil {
 				return err
@@ -469,7 +492,9 @@ func setCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().Bool("disable-dns", false, "true: this instance stops managing host DNS; false: it manages DNS (see docs/dns.md)")
+	c.Flags().String("dns-mode", "", "who manages host DNS: native, multibird or disabled (see docs/dns.md)")
+	c.Flags().Bool("disable-dns", false, "deprecated alias for --dns-mode disabled/native")
+	_ = c.Flags().MarkDeprecated("disable-dns", "use --dns-mode")
 	c.Flags().Int("wireguard-port", 0, "WireGuard listen port (0 restores the derived default)")
 	c.Flags().String("netbird-bin", "", "pinned netbird binary path (empty restores PATH lookup)")
 	return c
@@ -488,7 +513,7 @@ func logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := e.Store.Load(args[0])
+			i, err := e.Load(args[0])
 			if err != nil {
 				return err
 			}

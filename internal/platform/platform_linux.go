@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/magnetrong/multibird/internal/instance"
 )
 
 type linuxPlatform struct{}
@@ -31,6 +33,10 @@ func (linuxPlatform) RunDir() string { return "/var/run/multibird" }
 // InterfaceHint: Linux interface names are ours to choose; wt-mb-<i> stays
 // well under the 15-char IFNAMSIZ limit.
 func (linuxPlatform) InterfaceHint(i int) string { return fmt.Sprintf("wt-mb-%d", i) }
+
+// DefaultDNSMode: netbird's per-link systemd-resolved integration coexists
+// fine on Linux, so native stays the default there.
+func (linuxPlatform) DefaultDNSMode() instance.DNSMode { return instance.DNSNative }
 
 func (linuxPlatform) DiscoverInterface(addr netip.Addr) (string, error) {
 	return discoverByAddr(addr)

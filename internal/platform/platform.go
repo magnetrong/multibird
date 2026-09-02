@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+
+	"github.com/magnetrong/multibird/internal/instance"
 )
 
 // Platform is the single seam for OS differences.
@@ -37,6 +39,10 @@ type Platform interface {
 	// traffic to addr — used by preflight to report which instance WINS an
 	// overlapping-route conflict.
 	RouteInterface(addr netip.Addr) (string, error)
+
+	// DefaultDNSMode is the dns_mode for NEW instances: multibird (the DNS
+	// arbiter) on darwin, native on linux — see docs/dns.md.
+	DefaultDNSMode() instance.DNSMode
 
 	// DaemonEnv returns extra environment variables for spawned netbird
 	// daemons — OS-specific coexistence settings (e.g. disabling netbird's

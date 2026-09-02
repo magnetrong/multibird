@@ -13,8 +13,41 @@ package instance
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 )
+
+// DNSMode says who configures host DNS for an instance.
+type DNSMode string
+
+const (
+	// DNSNative lets netbird manage host DNS itself (upstream behavior;
+	// collides with other daemons on macOS — see docs/dns.md).
+	DNSNative DNSMode = "native"
+	// DNSMultibird runs netbird's resolver on a fixed local address with
+	// host configuration disabled; multibird writes the per-instance scoped
+	// resolvers into the macOS dynamic store (the arbiter). darwin-only.
+	DNSMultibird DNSMode = "multibird"
+	// DNSDisabled turns host DNS registration off entirely.
+	DNSDisabled DNSMode = "disabled"
+)
+
+// ParseDNSMode validates a user-supplied mode string.
+func ParseDNSMode(s string) (DNSMode, error) {
+	switch DNSMode(s) {
+	case DNSNative, DNSMultibird, DNSDisabled:
+		return DNSMode(s), nil
+	}
+	return "", fmt.Errorf("invalid dns mode %q: use native, multibird or disabled (see docs/dns.md)", s)
+}
+
+// DNSDisableSys reports whether netbird's own host-DNS configuration must be
+// off for this mode (the disable_dns daemon setting).
+func (m DNSMode) DNSDisableSys() bool { return m != DNSNative }
+
+// DNSBasePort is the base for derived per-instance resolver listen ports
+// (multibird DNS mode): 5300+index on 127.0.0.1.
+const DNSBasePort = 5300
 
 // DefaultBasePort is the default WireGuard listen port for index 0.
 // Deliberately NOT 51820 (stock netbird's default): multibird lives alongside
@@ -37,8 +70,13 @@ type Instance struct {
 	// and never reused while the instance exists.
 	Index int `toml:"index"`
 	// WireguardPort overrides the derived listen port when non-zero.
-	WireguardPort int  `toml:"wireguard_port,omitempty"`
-	DisableDNS    bool `toml:"disable_dns,omitempty"`
+	WireguardPort int `toml:"wireguard_port,omitempty"`
+	// DNSMode says who configures host DNS (see the DNSMode constants).
+	// Empty means "not migrated yet" — Normalize fills it in.
+	DNSMode DNSMode `toml:"dns_mode,omitempty"`
+	// LegacyDisableDNS is the pre-dns_mode boolean, read only for migration
+	// (true→disabled, false→platform default). Never written back.
+	LegacyDisableDNS bool `toml:"disable_dns,omitempty"`
 	// LoggedIn records that a successful Login gRPC call persisted the
 	// isolation params into netbird's config.json.
 	LoggedIn bool `toml:"logged_in,omitempty"`
@@ -57,6 +95,9 @@ type Params struct {
 	DaemonAddr string // --daemon-addr value (unix://<SocketPath>)
 	PIDFile    string // daemon pid file (written by internal/daemon)
 	WGPort     int    // WireGuard listen port
+	// DNSListen is the fixed resolver address used in DNSMultibird mode
+	// (sent as customDNSAddress): 127.0.0.1:<5300+index>.
+	DNSListen netip.AddrPort
 }
 
 // DeriveParams computes every isolation parameter. Pure function of its
@@ -68,6 +109,7 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 	if port == 0 {
 		port = DefaultBasePort + i.Index
 	}
+	dnsPort := uint16(DNSBasePort + i.Index) //nolint:gosec // G115: index is small
 	return Params{
 		Dir:        dir,
 		TOMLPath:   filepath.Join(dir, "instance.toml"),
@@ -77,7 +119,24 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 		DaemonAddr: "unix://" + sock,
 		PIDFile:    filepath.Join(runDir, i.Name+".pid"),
 		WGPort:     port,
+		DNSListen:  netip.AddrPortFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), dnsPort),
 	}
+}
+
+// Normalize migrates legacy fields: instances saved before dns_mode carry
+// only disable_dns (true→disabled; false→the platform default passed in).
+// Returns true if something changed and the instance should be re-saved.
+func (i *Instance) Normalize(defaultMode DNSMode) bool {
+	if i.DNSMode != "" {
+		return false
+	}
+	if i.LegacyDisableDNS {
+		i.DNSMode = DNSDisabled
+	} else {
+		i.DNSMode = defaultMode
+	}
+	i.LegacyDisableDNS = false // never write the legacy field back
+	return true
 }
 
 // String redacts the setup key.
@@ -99,7 +158,7 @@ func (i Instance) MarshalJSON() ([]byte, error) {
 		NetbirdBin    string `json:"netbird_bin,omitempty"`
 		Index         int    `json:"index"`
 		WireguardPort int    `json:"wireguard_port,omitempty"`
-		DisableDNS    bool   `json:"disable_dns,omitempty"`
+		DNSMode       string `json:"dns_mode,omitempty"`
 		LoggedIn      bool   `json:"logged_in,omitempty"`
 		Interface     string `json:"interface,omitempty"`
 		HasSetupKey   bool   `json:"has_setup_key"`
@@ -107,7 +166,7 @@ func (i Instance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(redacted{
 		Name: i.Name, ManagementURL: i.ManagementURL, SSO: i.SSO,
 		NetbirdBin: i.NetbirdBin, Index: i.Index, WireguardPort: i.WireguardPort,
-		DisableDNS: i.DisableDNS, LoggedIn: i.LoggedIn, Interface: i.Interface,
+		DNSMode: string(i.DNSMode), LoggedIn: i.LoggedIn, Interface: i.Interface,
 		HasSetupKey: i.SetupKey != "",
 	})
 }

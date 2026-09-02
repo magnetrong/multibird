@@ -50,6 +50,37 @@ func NewEnv() (*Env, error) {
 	}, nil
 }
 
+// Load reads one instance and migrates legacy fields (persisting the
+// migration so it happens once).
+func (e *Env) Load(name string) (*instance.Instance, error) {
+	i, err := e.Store.Load(name)
+	if err != nil {
+		return nil, err
+	}
+	if i.Normalize(e.Platform.DefaultDNSMode()) {
+		if err := e.Store.Save(i); err != nil {
+			return nil, err
+		}
+	}
+	return i, nil
+}
+
+// List returns all instances, migrated like Load.
+func (e *Env) List() ([]*instance.Instance, error) {
+	list, err := e.Store.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range list {
+		if i.Normalize(e.Platform.DefaultDNSMode()) {
+			if err := e.Store.Save(i); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return list, nil
+}
+
 // Add registers a new instance (does not start it).
 func (e *Env) Add(inst *instance.Instance) error {
 	if err := instance.ValidateName(inst.Name); err != nil {
@@ -63,6 +94,9 @@ func (e *Env) Add(inst *instance.Instance) error {
 		return err
 	}
 	inst.Index = idx
+	if inst.DNSMode == "" {
+		inst.DNSMode = e.Platform.DefaultDNSMode()
+	}
 	return e.Store.Save(inst)
 }
 
@@ -117,7 +151,7 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 			ManagementURL: inst.ManagementURL,
 			InterfaceName: e.Platform.InterfaceHint(inst.Index),
 			WireguardPort: p.WGPort,
-			DisableDNS:    inst.DisableDNS,
+			DisableDNS:    inst.DNSMode.DNSDisableSys(),
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)

@@ -2,6 +2,7 @@ package instance
 
 import (
 	"encoding/json"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ func TestDeriveParams(t *testing.T) {
 				DaemonAddr: "unix:///var/run/multibird/home.sock",
 				PIDFile:    "/var/run/multibird/home.pid",
 				WGPort:     51900,
+				DNSListen:  netip.MustParseAddrPort("127.0.0.1:5300"),
 			},
 		},
 		{
@@ -41,6 +43,7 @@ func TestDeriveParams(t *testing.T) {
 				ConfigJSON: "/r/lab/config.json", LogFile: "/r/lab/daemon.log",
 				SocketPath: "/v/lab.sock", DaemonAddr: "unix:///v/lab.sock",
 				PIDFile: "/v/lab.pid", WGPort: 51903,
+				DNSListen: netip.MustParseAddrPort("127.0.0.1:5303"),
 			},
 		},
 		{
@@ -52,6 +55,7 @@ func TestDeriveParams(t *testing.T) {
 				ConfigJSON: "/r/lab/config.json", LogFile: "/r/lab/daemon.log",
 				SocketPath: "/v/lab.sock", DaemonAddr: "unix:///v/lab.sock",
 				PIDFile: "/v/lab.pid", WGPort: 40000,
+				DNSListen: netip.MustParseAddrPort("127.0.0.1:5303"),
 			},
 		},
 	}
@@ -141,5 +145,50 @@ func assertMode(t *testing.T, path string, want uint32) {
 	}
 	if got := uint32(fi.Mode().Perm()); got != want {
 		t.Errorf("%s has mode %o, want %o", path, got, want)
+	}
+}
+
+func TestNormalizeDNSModeMigration(t *testing.T) {
+	tests := []struct {
+		name    string
+		inst    Instance
+		def     DNSMode
+		want    DNSMode
+		changed bool
+	}{
+		{"legacy disable_dns=true", Instance{LegacyDisableDNS: true}, DNSMultibird, DNSDisabled, true},
+		{"legacy disable_dns=false gets platform default (darwin)", Instance{}, DNSMultibird, DNSMultibird, true},
+		{"legacy disable_dns=false gets platform default (linux)", Instance{}, DNSNative, DNSNative, true},
+		{"already migrated stays put", Instance{DNSMode: DNSNative, LegacyDisableDNS: true}, DNSMultibird, DNSNative, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.inst.Normalize(tt.def)
+			if got != tt.changed || tt.inst.DNSMode != tt.want {
+				t.Errorf("Normalize: changed=%v mode=%q; want changed=%v mode=%q", got, tt.inst.DNSMode, tt.changed, tt.want)
+			}
+			if got && tt.inst.LegacyDisableDNS {
+				t.Error("legacy flag must be cleared on migration so it is never written back")
+			}
+		})
+	}
+}
+
+func TestParseDNSMode(t *testing.T) {
+	for _, ok := range []string{"native", "multibird", "disabled"} {
+		if _, err := ParseDNSMode(ok); err != nil {
+			t.Errorf("ParseDNSMode(%q): %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "Native", "off", "auto"} {
+		if _, err := ParseDNSMode(bad); err == nil {
+			t.Errorf("ParseDNSMode(%q) should fail", bad)
+		}
+	}
+}
+
+func TestDNSDisableSys(t *testing.T) {
+	if DNSNative.DNSDisableSys() || !DNSMultibird.DNSDisableSys() || !DNSDisabled.DNSDisableSys() {
+		t.Error("DNSDisableSys: native=false, multibird=true, disabled=true expected")
 	}
 }
