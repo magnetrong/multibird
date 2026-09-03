@@ -27,11 +27,14 @@ func LaunchdPlistPath(name string) string {
 	return "/Library/LaunchDaemons/" + LaunchdLabel(name) + ".plist"
 }
 
-// SystemdUnit renders the systemd system unit. `up` spawns a detached daemon
+// SystemdUnit renders the systemd system unit. configRoot pins the
+// installing user's multibird config root: system units run as root, whose
+// HOME would otherwise point instance lookup at the wrong directory
+// (verified failure mode on macOS, 2026-09-03). `up` spawns a detached daemon
 // and exits, so the unit is oneshot+RemainAfterExit; the netbird daemon
 // itself is not supervised by systemd (multibird nuke/up recovers crashes,
 // matching stock netbird's model where the service wraps its own runner).
-func SystemdUnit(name, multibirdBin string) string {
+func SystemdUnit(name, multibirdBin, configRoot string) string {
 	return fmt.Sprintf(`[Unit]
 Description=multibird instance %[1]s (isolated NetBird daemon)
 Documentation=https://github.com/magnetrong/multibird
@@ -41,18 +44,19 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+Environment=MULTIBIRD_CONFIG_ROOT=%[3]s
 ExecStart=%[2]s up %[1]s
 ExecStop=%[2]s down %[1]s
 
 [Install]
 WantedBy=multi-user.target
-`, name, multibirdBin)
+`, name, multibirdBin, configRoot)
 }
 
 // LaunchdPlist renders the macOS LaunchDaemon plist. RunAtLoad brings the
 // instance up at boot; there is no KeepAlive because `up` exits after
 // spawning the detached daemon.
-func LaunchdPlist(name, multibirdBin string) string {
+func LaunchdPlist(name, multibirdBin, configRoot string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -67,9 +71,14 @@ func LaunchdPlist(name, multibirdBin string) string {
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>MULTIBIRD_CONFIG_ROOT</key>
+		<string>%[4]s</string>
+	</dict>
 </dict>
 </plist>
-`, LaunchdLabel(name), multibirdBin, name)
+`, LaunchdLabel(name), multibirdBin, name, configRoot)
 }
 
 // SystemdDNSWatchUnitPath is where the Linux dns-watch unit lives.
@@ -90,7 +99,7 @@ func LaunchdDNSWatchPlistPath(name string) string {
 // SystemdDNSWatchUnit renders the long-running dns-watch unit
 // (`multibird dns sync <name> --watch`). Only meaningful for darwin's
 // multibird DNS mode, but rendered on both OSes for symmetry.
-func SystemdDNSWatchUnit(name, multibirdBin string) string {
+func SystemdDNSWatchUnit(name, multibirdBin, configRoot string) string {
 	return fmt.Sprintf(`[Unit]
 Description=multibird dns watch for instance %[1]s
 Documentation=https://github.com/magnetrong/multibird
@@ -98,19 +107,20 @@ After=multibird-%[1]s.service
 Wants=multibird-%[1]s.service
 
 [Service]
+Environment=MULTIBIRD_CONFIG_ROOT=%[3]s
 ExecStart=%[2]s dns sync %[1]s --watch
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, name, multibirdBin)
+`, name, multibirdBin, configRoot)
 }
 
 // LaunchdDNSWatchPlist renders the KeepAlive dns-watch LaunchDaemon: it
 // keeps the instance's host DNS registration in sync with daemon
 // NETWORK/DNS events (docs/dns.md).
-func LaunchdDNSWatchPlist(name, multibirdBin string) string {
+func LaunchdDNSWatchPlist(name, multibirdBin, configRoot string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -129,7 +139,12 @@ func LaunchdDNSWatchPlist(name, multibirdBin string) string {
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>MULTIBIRD_CONFIG_ROOT</key>
+		<string>%[4]s</string>
+	</dict>
 </dict>
 </plist>
-`, LaunchdDNSWatchLabel(name), multibirdBin, name)
+`, LaunchdDNSWatchLabel(name), multibirdBin, name, configRoot)
 }

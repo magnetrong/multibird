@@ -131,6 +131,11 @@ func (darwinPlatform) StockNetbirdDNSPresent() (bool, error) {
 func newPlatform() Platform { return darwinPlatform{} }
 
 func (darwinPlatform) ConfigRoot() (string, error) {
+	// Boot units run as root with root's HOME; they pin the installing
+	// user's config root via this env var (set in the generated units).
+	if r := os.Getenv("MULTIBIRD_CONFIG_ROOT"); r != "" {
+		return r, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("finding home directory: %w", err)

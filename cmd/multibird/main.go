@@ -414,7 +414,7 @@ func installCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("locating the multibird binary: %w", err)
 			}
-			path, err := persist.Install(i.Name, bin)
+			path, err := persist.Install(i.Name, bin, e.Store.Root)
 			if err != nil {
 				return err
 			}
@@ -423,7 +423,7 @@ func installCmd() *cobra.Command {
 				if i.DNSMode != instance.DNSMultibird {
 					return fmt.Errorf("--dns-watch only makes sense for dns_mode multibird — instance %q is %q (change it with `multibird set %s --dns-mode multibird`)", i.Name, i.DNSMode, i.Name)
 				}
-				wpath, err := persist.InstallDNSWatch(i.Name, bin)
+				wpath, err := persist.InstallDNSWatch(i.Name, bin, e.Store.Root)
 				if err != nil {
 					return err
 				}

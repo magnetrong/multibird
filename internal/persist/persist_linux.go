@@ -11,9 +11,9 @@ import (
 
 // Install writes the systemd system unit for the instance and enables it at
 // boot. Requires root. Returns the unit path.
-func Install(name, multibirdBin string) (string, error) {
+func Install(name, multibirdBin, configRoot string) (string, error) {
 	path := SystemdUnitPath(name)
-	if err := os.WriteFile(path, []byte(SystemdUnit(name, multibirdBin)), 0o644); err != nil { //nolint:gosec // G306: systemd units are conventionally world-readable and contain no secrets
+	if err := os.WriteFile(path, []byte(SystemdUnit(name, multibirdBin, configRoot)), 0o644); err != nil { //nolint:gosec // G306: systemd units are conventionally world-readable and contain no secrets
 		return "", fmt.Errorf("writing %s: %w — boot units are system-level, run with sudo", path, err)
 	}
 	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
@@ -45,9 +45,9 @@ func Uninstall(name string) error {
 }
 
 // InstallDNSWatch writes and enables the dns-watch unit. Requires root.
-func InstallDNSWatch(name, multibirdBin string) (string, error) {
+func InstallDNSWatch(name, multibirdBin, configRoot string) (string, error) {
 	path := SystemdDNSWatchUnitPath(name)
-	if err := os.WriteFile(path, []byte(SystemdDNSWatchUnit(name, multibirdBin)), 0o644); err != nil { //nolint:gosec // G306: units are world-readable, no secrets
+	if err := os.WriteFile(path, []byte(SystemdDNSWatchUnit(name, multibirdBin, configRoot)), 0o644); err != nil { //nolint:gosec // G306: units are world-readable, no secrets
 		return "", fmt.Errorf("writing %s: %w — run with sudo", path, err)
 	}
 	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {

@@ -19,6 +19,11 @@ type linuxPlatform struct{}
 func newPlatform() Platform { return linuxPlatform{} }
 
 func (linuxPlatform) ConfigRoot() (string, error) {
+	// Boot units run as root with root's HOME; they pin the installing
+	// user's config root via this env var (set in the generated units).
+	if r := os.Getenv("MULTIBIRD_CONFIG_ROOT"); r != "" {
+		return r, nil
+	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "multibird"), nil
 	}

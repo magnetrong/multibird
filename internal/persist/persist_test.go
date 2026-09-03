@@ -9,10 +9,10 @@ import (
 // from docs/privileges.md / ROADMAP v0.2).
 func TestUnitsInvokeMultibirdNotNetbird(t *testing.T) {
 	for name, content := range map[string]string{
-		"systemd":          SystemdUnit("home", "/usr/local/bin/multibird"),
-		"launchd":          LaunchdPlist("home", "/usr/local/bin/multibird"),
-		"systemd dnswatch": SystemdDNSWatchUnit("home", "/usr/local/bin/multibird"),
-		"launchd dnswatch": LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird"),
+		"systemd":          SystemdUnit("home", "/usr/local/bin/multibird", "/Users/u/cfg"),
+		"launchd":          LaunchdPlist("home", "/usr/local/bin/multibird", "/Users/u/cfg"),
+		"systemd dnswatch": SystemdDNSWatchUnit("home", "/usr/local/bin/multibird", "/Users/u/cfg"),
+		"launchd dnswatch": LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird", "/Users/u/cfg"),
 	} {
 		if !strings.Contains(content, "/usr/local/bin/multibird") {
 			t.Errorf("%s unit does not invoke the multibird binary:\n%s", name, content)
@@ -24,10 +24,11 @@ func TestUnitsInvokeMultibirdNotNetbird(t *testing.T) {
 }
 
 func TestSystemdUnit(t *testing.T) {
-	u := SystemdUnit("home", "/usr/local/bin/multibird")
+	u := SystemdUnit("home", "/usr/local/bin/multibird", "/Users/u/cfg")
 	for _, want := range []string{
 		"ExecStart=/usr/local/bin/multibird up home",
 		"ExecStop=/usr/local/bin/multibird down home",
+		"Environment=MULTIBIRD_CONFIG_ROOT=/Users/u/cfg",
 		"Type=oneshot",
 		"RemainAfterExit=yes",
 		"After=network-online.target",
@@ -40,13 +41,15 @@ func TestSystemdUnit(t *testing.T) {
 }
 
 func TestLaunchdPlist(t *testing.T) {
-	p := LaunchdPlist("home", "/usr/local/bin/multibird")
+	p := LaunchdPlist("home", "/usr/local/bin/multibird", "/Users/u/cfg")
 	for _, want := range []string{
 		"<string>io.github.magnetrong.multibird.home</string>",
 		"<string>/usr/local/bin/multibird</string>",
 		"<string>up</string>",
 		"<string>home</string>",
 		"<key>RunAtLoad</key>",
+		"<key>MULTIBIRD_CONFIG_ROOT</key>",
+		"<string>/Users/u/cfg</string>",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("launchd plist missing %q:\n%s", want, p)
@@ -64,20 +67,22 @@ func TestPaths(t *testing.T) {
 }
 
 func TestDNSWatchUnits(t *testing.T) {
-	u := SystemdDNSWatchUnit("home", "/usr/local/bin/multibird")
+	u := SystemdDNSWatchUnit("home", "/usr/local/bin/multibird", "/Users/u/cfg")
 	for _, want := range []string{
 		"ExecStart=/usr/local/bin/multibird dns sync home --watch",
 		"Restart=on-failure",
+		"Environment=MULTIBIRD_CONFIG_ROOT=/Users/u/cfg",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("systemd dns-watch unit missing %q:\n%s", want, u)
 		}
 	}
-	p := LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird")
+	p := LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird", "/Users/u/cfg")
 	for _, want := range []string{
 		"<string>io.github.magnetrong.multibird.dnswatch.home</string>",
 		"<string>dns</string>", "<string>sync</string>", "<string>--watch</string>",
 		"<key>KeepAlive</key>",
+		"<key>MULTIBIRD_CONFIG_ROOT</key>",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("launchd dns-watch plist missing %q:\n%s", want, p)
