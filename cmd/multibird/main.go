@@ -394,7 +394,8 @@ func nukeCmd() *cobra.Command {
 }
 
 func installCmd() *cobra.Command {
-	return &cobra.Command{
+	var dnsWatch bool
+	c := &cobra.Command{
 		Use:               "install <name>",
 		Short:             "Install a boot unit (systemd/launchd, system-level) for an instance",
 		Long:              "Generates and enables a root-level boot unit that runs `multibird up <name>`\nat boot — via multibird, never netbird directly, so preflight always runs.\nRequires sudo.",
@@ -418,9 +419,21 @@ func installCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("%s: boot unit installed (%s) — instance comes up at boot; `multibird uninstall %s` reverses this\n", i.Name, path, i.Name)
+			if dnsWatch {
+				if i.DNSMode != instance.DNSMultibird {
+					return fmt.Errorf("--dns-watch only makes sense for dns_mode multibird — instance %q is %q (change it with `multibird set %s --dns-mode multibird`)", i.Name, i.DNSMode, i.Name)
+				}
+				wpath, err := persist.InstallDNSWatch(i.Name, bin)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s: dns-watch unit installed (%s) — host DNS stays in sync with daemon events\n", i.Name, wpath)
+			}
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&dnsWatch, "dns-watch", false, "also install a KeepAlive unit running `multibird dns sync <name> --watch` (multibird DNS mode)")
+	return c
 }
 
 func uninstallCmd() *cobra.Command {
@@ -430,10 +443,13 @@ func uninstallCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeInstanceNames,
 		RunE: func(_ *cobra.Command, args []string) error {
+			if err := persist.UninstallDNSWatch(args[0]); err != nil {
+				return err
+			}
 			if err := persist.Uninstall(args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("%s: boot unit removed\n", args[0])
+			fmt.Printf("%s: boot unit removed (dns-watch unit too, if present)\n", args[0])
 			return nil
 		},
 	}

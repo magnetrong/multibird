@@ -43,3 +43,37 @@ func Uninstall(name string) error {
 	}
 	return nil
 }
+
+// InstallDNSWatch writes and enables the dns-watch unit. Requires root.
+func InstallDNSWatch(name, multibirdBin string) (string, error) {
+	path := SystemdDNSWatchUnitPath(name)
+	if err := os.WriteFile(path, []byte(SystemdDNSWatchUnit(name, multibirdBin)), 0o644); err != nil { //nolint:gosec // G306: units are world-readable, no secrets
+		return "", fmt.Errorf("writing %s: %w — run with sudo", path, err)
+	}
+	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
+		return "", fmt.Errorf("systemctl daemon-reload: %w: %s", err, out)
+	}
+	if out, err := exec.Command("systemctl", "enable", "--now", "multibird-dnswatch-"+name+".service").CombinedOutput(); err != nil {
+		return "", fmt.Errorf("systemctl enable --now: %w: %s", err, out)
+	}
+	return path, nil
+}
+
+// UninstallDNSWatch removes the dns-watch unit. Idempotent.
+func UninstallDNSWatch(name string) error {
+	unit := "multibird-dnswatch-" + name + ".service"
+	path := SystemdDNSWatchUnitPath(name)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if out, err := exec.Command("systemctl", "disable", "--now", unit).CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl disable --now: %w: %s — run with sudo", err, out)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing %s: %w", path, err)
+	}
+	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w: %s", err, out)
+	}
+	return nil
+}

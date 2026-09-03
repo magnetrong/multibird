@@ -38,3 +38,31 @@ func Uninstall(name string) error {
 	}
 	return nil
 }
+
+// InstallDNSWatch writes and loads the KeepAlive dns-watch LaunchDaemon.
+// Requires root.
+func InstallDNSWatch(name, multibirdBin string) (string, error) {
+	path := LaunchdDNSWatchPlistPath(name)
+	if err := os.WriteFile(path, []byte(LaunchdDNSWatchPlist(name, multibirdBin)), 0o644); err != nil {
+		return "", fmt.Errorf("writing %s: %w — run with sudo", path, err)
+	}
+	if out, err := exec.Command("launchctl", "load", "-w", path).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("launchctl load: %w: %s", err, out)
+	}
+	return path, nil
+}
+
+// UninstallDNSWatch unloads and removes the dns-watch LaunchDaemon. Idempotent.
+func UninstallDNSWatch(name string) error {
+	path := LaunchdDNSWatchPlistPath(name)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if out, err := exec.Command("launchctl", "unload", "-w", path).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl unload: %w: %s — run with sudo", err, out)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing %s: %w", path, err)
+	}
+	return nil
+}

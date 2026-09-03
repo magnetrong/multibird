@@ -9,8 +9,10 @@ import (
 // from docs/privileges.md / ROADMAP v0.2).
 func TestUnitsInvokeMultibirdNotNetbird(t *testing.T) {
 	for name, content := range map[string]string{
-		"systemd": SystemdUnit("home", "/usr/local/bin/multibird"),
-		"launchd": LaunchdPlist("home", "/usr/local/bin/multibird"),
+		"systemd":          SystemdUnit("home", "/usr/local/bin/multibird"),
+		"launchd":          LaunchdPlist("home", "/usr/local/bin/multibird"),
+		"systemd dnswatch": SystemdDNSWatchUnit("home", "/usr/local/bin/multibird"),
+		"launchd dnswatch": LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird"),
 	} {
 		if !strings.Contains(content, "/usr/local/bin/multibird") {
 			t.Errorf("%s unit does not invoke the multibird binary:\n%s", name, content)
@@ -58,5 +60,33 @@ func TestPaths(t *testing.T) {
 	}
 	if got := LaunchdPlistPath("home"); got != "/Library/LaunchDaemons/io.github.magnetrong.multibird.home.plist" {
 		t.Errorf("LaunchdPlistPath = %q", got)
+	}
+}
+
+func TestDNSWatchUnits(t *testing.T) {
+	u := SystemdDNSWatchUnit("home", "/usr/local/bin/multibird")
+	for _, want := range []string{
+		"ExecStart=/usr/local/bin/multibird dns sync home --watch",
+		"Restart=on-failure",
+	} {
+		if !strings.Contains(u, want) {
+			t.Errorf("systemd dns-watch unit missing %q:\n%s", want, u)
+		}
+	}
+	p := LaunchdDNSWatchPlist("home", "/usr/local/bin/multibird")
+	for _, want := range []string{
+		"<string>io.github.magnetrong.multibird.dnswatch.home</string>",
+		"<string>dns</string>", "<string>sync</string>", "<string>--watch</string>",
+		"<key>KeepAlive</key>",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("launchd dns-watch plist missing %q:\n%s", want, p)
+		}
+	}
+	if got := LaunchdDNSWatchPlistPath("home"); got != "/Library/LaunchDaemons/io.github.magnetrong.multibird.dnswatch.home.plist" {
+		t.Errorf("LaunchdDNSWatchPlistPath = %q", got)
+	}
+	if got := SystemdDNSWatchUnitPath("home"); got != "/etc/systemd/system/multibird-dnswatch-home.service" {
+		t.Errorf("SystemdDNSWatchUnitPath = %q", got)
 	}
 }

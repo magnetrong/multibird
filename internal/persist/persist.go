@@ -71,3 +71,65 @@ func LaunchdPlist(name, multibirdBin string) string {
 </plist>
 `, LaunchdLabel(name), multibirdBin, name)
 }
+
+// SystemdDNSWatchUnitPath is where the Linux dns-watch unit lives.
+func SystemdDNSWatchUnitPath(name string) string {
+	return "/etc/systemd/system/multibird-dnswatch-" + name + ".service"
+}
+
+// LaunchdDNSWatchLabel is the launchd label for an instance's dns-watch job.
+func LaunchdDNSWatchLabel(name string) string {
+	return "io.github.magnetrong.multibird.dnswatch." + name
+}
+
+// LaunchdDNSWatchPlistPath is where the dns-watch LaunchDaemon plist lives.
+func LaunchdDNSWatchPlistPath(name string) string {
+	return "/Library/LaunchDaemons/" + LaunchdDNSWatchLabel(name) + ".plist"
+}
+
+// SystemdDNSWatchUnit renders the long-running dns-watch unit
+// (`multibird dns sync <name> --watch`). Only meaningful for darwin's
+// multibird DNS mode, but rendered on both OSes for symmetry.
+func SystemdDNSWatchUnit(name, multibirdBin string) string {
+	return fmt.Sprintf(`[Unit]
+Description=multibird dns watch for instance %[1]s
+Documentation=https://github.com/magnetrong/multibird
+After=multibird-%[1]s.service
+Wants=multibird-%[1]s.service
+
+[Service]
+ExecStart=%[2]s dns sync %[1]s --watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`, name, multibirdBin)
+}
+
+// LaunchdDNSWatchPlist renders the KeepAlive dns-watch LaunchDaemon: it
+// keeps the instance's host DNS registration in sync with daemon
+// NETWORK/DNS events (docs/dns.md).
+func LaunchdDNSWatchPlist(name, multibirdBin string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%[1]s</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%[2]s</string>
+		<string>dns</string>
+		<string>sync</string>
+		<string>%[3]s</string>
+		<string>--watch</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+</dict>
+</plist>
+`, LaunchdDNSWatchLabel(name), multibirdBin, name)
+}
