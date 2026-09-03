@@ -12,8 +12,10 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,6 +24,17 @@ import (
 )
 
 const dynStorePrefix = "State:/Network/Service/multibird-"
+
+// ErrNeedsRoot marks host-DNS writes attempted without root; callers on
+// read-only paths (plain `multibird status`) downgrade it to a hint.
+var ErrNeedsRoot = errors.New("writing host DNS registrations needs root")
+
+func requireRoot() error {
+	if os.Geteuid() != 0 {
+		return ErrNeedsRoot
+	}
+	return nil
+}
 
 // Mirror upstream host_darwin.go v0.77.1: scutil d.add takes at most 99
 // values, upstream stays at 50 domains and ~1500 bytes per key to keep under
@@ -117,6 +130,22 @@ func renderRemoveScript(keys []string) string {
 // regex pattern).
 func listScript() string {
 	return "list " + regexp.QuoteMeta(dynStorePrefix) + ".*/DNS\nquit\n"
+}
+
+// scutilOutputError scans scutil output for write failures it reports with
+// exit code 0 ("set State:/... failed: Permission Denied" and friends).
+func scutilOutputError(out string) error {
+	for _, line := range strings.Split(out, "\n") {
+		l := strings.ToLower(strings.TrimSpace(line))
+		if l == "" {
+			continue
+		}
+		if strings.Contains(l, "failed") || strings.Contains(l, "not permitted") ||
+			strings.Contains(l, "permission denied") || strings.Contains(l, "access denied") {
+			return fmt.Errorf("%s", strings.TrimSpace(line))
+		}
+	}
+	return nil
 }
 
 // parseListedKeys extracts key names from `scutil list` output, whose lines

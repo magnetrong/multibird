@@ -28,6 +28,12 @@ func execScutil(script string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("scutil: %w: %s (host DNS changes need root — try sudo)", err, out)
 	}
+	// scutil exits 0 even when a set/remove fails (e.g. permission denied as
+	// non-root) and prints the error to stdout instead — verified in the
+	// field 2026-09-03. Treat error-looking output as failure.
+	if serr := scutilOutputError(string(out)); serr != nil {
+		return "", fmt.Errorf("scutil: %w (host DNS changes need root — try sudo)", serr)
+	}
 	return string(out), nil
 }
 
@@ -54,8 +60,13 @@ func flushDNSCache() error {
 }
 
 // ApplyHostDNS writes the instance's scoped resolvers: remove its stale keys,
-// set the new ones, flush the resolver cache. Idempotent.
+// set the new ones, flush the resolver cache. Idempotent. Needs root — the
+// dynamic store rejects unprivileged writes (and scutil hides the failure in
+// exit-0 output).
 func (darwinPlatform) ApplyHostDNS(instanceName string, spec hostdns.Spec) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
 	existing, err := listMultibirdKeys()
 	if err != nil {
 		return fmt.Errorf("listing dynamic-store keys: %w", err)
@@ -74,7 +85,8 @@ func (darwinPlatform) ApplyHostDNS(instanceName string, spec hostdns.Spec) error
 	return nil
 }
 
-// RemoveHostDNS removes every key the instance owns. Idempotent.
+// RemoveHostDNS removes every key the instance owns. Idempotent; needs root
+// only when there is something to remove.
 func (darwinPlatform) RemoveHostDNS(instanceName string) error {
 	existing, err := listMultibirdKeys()
 	if err != nil {
@@ -83,6 +95,9 @@ func (darwinPlatform) RemoveHostDNS(instanceName string) error {
 	keys := keysOfInstance(existing, instanceName)
 	if len(keys) == 0 {
 		return nil
+	}
+	if err := requireRoot(); err != nil {
+		return err
 	}
 	if _, err := runScutil(renderRemoveScript(keys)); err != nil {
 		return fmt.Errorf("removing DNS keys for %q: %w", instanceName, err)

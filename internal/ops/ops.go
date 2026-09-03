@@ -5,6 +5,7 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -306,7 +307,9 @@ func (e *Env) Status(ctx context.Context, insts []*instance.Instance) []Instance
 					fs := st.GetFullStatus()
 					s.NetbirdIP = fs.GetLocalPeerState().GetIP()
 					s.Peers = len(fs.GetPeers())
-					if err := e.applyHostDNSFromStatus(inst, st); err != nil {
+					if err := e.applyHostDNSFromStatus(inst, st); errors.Is(err, platform.ErrNeedsRoot) {
+						e.Warnf("instance %q: host DNS registration is stale or unverified — run `sudo multibird dns sync %s` (writing it needs root)", inst.Name, inst.Name)
+					} else if err != nil {
 						e.Warnf("%v", err)
 					}
 					// Backfill interface discovery: `up` may have returned

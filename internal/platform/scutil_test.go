@@ -1,8 +1,10 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -126,5 +128,35 @@ func TestListScript(t *testing.T) {
 func TestHostDNSKeysEmptySpec(t *testing.T) {
 	if keys := hostDNSKeys("vpn", hostdns.Spec{}); len(keys) != 0 {
 		t.Errorf("empty spec should produce no keys, got %v", keys)
+	}
+}
+
+func TestScutilOutputError(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		ok   bool
+	}{
+		{"empty output", "", true},
+		{"list output", "  subKey [0] = State:/Network/Service/multibird-vpn-Match-0/DNS\n", true},
+		{"permission denied", "set State:/Network/Service/multibird-vpn-Match-0/DNS failed: Permission Denied\n", false},
+		{"not permitted", "  Operation not permitted\n", false},
+		{"access denied", "Access denied\n", false},
+	}
+	for _, tt := range tests {
+		if err := scutilOutputError(tt.out); (err == nil) != tt.ok {
+			t.Errorf("%s: scutilOutputError = %v, want ok=%v", tt.name, err, tt.ok)
+		}
+	}
+}
+
+func TestRequireRoot(t *testing.T) {
+	err := requireRoot()
+	if os.Geteuid() == 0 {
+		if err != nil {
+			t.Errorf("as root: %v", err)
+		}
+	} else if !errors.Is(err, ErrNeedsRoot) {
+		t.Errorf("as non-root: err = %v, want ErrNeedsRoot", err)
 	}
 }
