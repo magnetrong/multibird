@@ -5,6 +5,7 @@
 package hostdns
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net/netip"
 	"sort"
@@ -115,7 +116,8 @@ func ResolverAddr(ipCIDR string) (netip.AddrPort, error) {
 	v := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3])
 	v |= ^uint32(0) >> bits
 	v--
-	out := [4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+	var out [4]byte
+	binary.BigEndian.PutUint32(out[:], v)
 	return netip.AddrPortFrom(netip.AddrFrom4(out), 53), nil
 }
 
