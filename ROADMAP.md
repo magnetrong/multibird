@@ -51,7 +51,12 @@ Acceptance criteria:
 - macOS DNS arbitration: with stock netbird (mesh A) + a multibird-mode instance
   (mesh B) on one Mac, names of BOTH meshes resolve simultaneously, keep resolving
   across network changes and down/up, and `down|remove|nuke` leave no multibird-*
-  DNS keys (`doctor` reports strays).
+  DNS keys (`doctor` reports strays). ✅ **VERIFIED 2026-09-03**: stock netbird
+  (netbird.selfhosted) + multibird instance (mesh.magnetrong.com) both resolved via
+  dscacheutil after a Wi-Fi toggle; `down` removed all multibird-* keys. The
+  registered resolvers point at the daemon's in-tunnel address
+  (`nameserver 100.96.255.254 port 53`, Supplemental flags) — see docs/dns.md for
+  why (userspace-bind ServiceViaMemory; took the 2026-09-03 corrections to land).
 
 Open questions carried out of v0.2 field testing:
 - **Linux multi-instance routing**: does netbird's Linux advanced routing (policy
