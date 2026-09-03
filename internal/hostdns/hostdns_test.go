@@ -9,7 +9,7 @@ import (
 	"github.com/netbirdio/netbird/client/proto"
 )
 
-var listen = netip.MustParseAddrPort("127.0.0.1:5300")
+var listen = netip.MustParseAddrPort("100.96.255.254:53") // lastIP(100.96.0.0/16)-1
 
 func status(fqdn, ip, ipv6 string, groups ...*proto.NSGroupState) *proto.StatusResponse {
 	return &proto.StatusResponse{
@@ -89,15 +89,10 @@ func TestDerive(t *testing.T) {
 			st:      status("mac.mesh.example", "100.96.43.121/16", "", &proto.NSGroupState{Enabled: true, Servers: []string{"9.9.9.9:53"}}),
 			wantErr: ErrPrimaryClaim,
 		},
-		{
-			name: "no fqdn, no ip: empty spec",
-			st:   status("", "", ""),
-			want: Spec{Listen: listen},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Derive(tt.st, listen)
+			got, err := Derive(tt.st)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("err = %v, want %v", err, tt.wantErr)
@@ -117,8 +112,39 @@ func TestDerive(t *testing.T) {
 func TestDeriveGroupWithNoDomainsButDisabled(t *testing.T) {
 	// A DISABLED route-all group must not trip the primary-claim refusal.
 	st := status("mac.mesh.example", "100.96.43.121/16", "", group(false))
-	if _, err := Derive(st, listen); err != nil {
+	if _, err := Derive(st); err != nil {
 		t.Fatalf("disabled route-all group should be ignored: %v", err)
+	}
+}
+
+func TestDeriveNoIPErrors(t *testing.T) {
+	if _, err := Derive(status("mac.mesh.example", "", "")); err == nil {
+		t.Fatal("Derive without a local peer IP must error (callers gate on IP presence)")
+	}
+}
+
+func TestResolverAddr(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"100.96.43.121/16", "100.96.255.254:53"}, // matches the field-verified manual fix
+		{"100.64.0.5/10", "100.127.255.254:53"},
+		{"192.168.1.7/24", "192.168.1.254:53"},
+	}
+	for _, tt := range tests {
+		got, err := ResolverAddr(tt.in)
+		if err != nil {
+			t.Errorf("ResolverAddr(%q): %v", tt.in, err)
+			continue
+		}
+		if got.String() != tt.want {
+			t.Errorf("ResolverAddr(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+	for _, bad := range []string{"", "100.96.43.121", "fd00::1/64", "junk"} {
+		if _, err := ResolverAddr(bad); err == nil {
+			t.Errorf("ResolverAddr(%q) should fail", bad)
+		}
 	}
 }
 

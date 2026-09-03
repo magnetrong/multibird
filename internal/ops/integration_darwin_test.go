@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/magnetrong/multibird/internal/hostdns"
 	"github.com/magnetrong/multibird/internal/instance"
 	"github.com/magnetrong/multibird/internal/nbgrpc"
 	"github.com/magnetrong/multibird/internal/platform"
@@ -65,9 +66,6 @@ func TestIntegrationDarwinDNSArbiter(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
-	if !strings.Contains(string(out), p.DNSListen.Addr().String()) {
-		t.Errorf("scutil --dns does not show a resolver at %s:\n%s", p.DNSListen, out)
-	}
 
 	// Resolve our own fqdn through the system resolver (NOT dig).
 	c, err := nbgrpc.Dial(p.SocketPath)
@@ -79,6 +77,14 @@ func TestIntegrationDarwinDNSArbiter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	spec, err := hostdns.Derive(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), spec.Listen.Addr().String()) {
+		t.Errorf("scutil --dns does not show a resolver at %s:\n%s", spec.Listen, out)
+	}
+
 	fqdn := st.GetFullStatus().GetLocalPeerState().GetFqdn()
 	if fqdn != "" {
 		res, err := exec.Command("dscacheutil", "-q", "host", "-a", "name", fqdn).Output()

@@ -16,7 +16,12 @@ import (
 // Spec is everything the host needs to route the right lookups to one
 // instance's resolver.
 type Spec struct {
-	// Listen is the instance's fixed resolver address (127.0.0.1:<port>).
+	// Listen is the daemon's resolver address. On macOS netbird always runs
+	// a userspace-WireGuard bind, so the resolver is an in-memory packet
+	// hook at the LAST IP of the mesh network minus one, port 53 (upstream
+	// ServiceViaMemory/GetLastIPFromNetwork(network, 1)), reachable only
+	// through the tunnel — customDNSAddress is IGNORED on that path
+	// (verified in the field 2026-09-03).
 	Listen netip.AddrPort
 	// SearchDomains complete bare hostnames (the peer domain).
 	SearchDomains []string
@@ -36,8 +41,12 @@ var ErrPrimaryClaim = fmt.Errorf("this mesh claims ALL DNS (a nameserver group w
 // Derive builds the Spec for one instance from its daemon's full status.
 // The status must carry a local peer IP (engine up); callers skip and retry
 // otherwise.
-func Derive(st *proto.StatusResponse, listen netip.AddrPort) (Spec, error) {
+func Derive(st *proto.StatusResponse) (Spec, error) {
 	fs := st.GetFullStatus()
+	listen, err := ResolverAddr(fs.GetLocalPeerState().GetIP())
+	if err != nil {
+		return Spec{}, fmt.Errorf("deriving resolver address: %w", err)
+	}
 	spec := Spec{Listen: listen}
 
 	seen := map[string]bool{}
@@ -86,6 +95,28 @@ func Derive(st *proto.StatusResponse, listen netip.AddrPort) (Spec, error) {
 
 	sort.Strings(spec.MatchDomains)
 	return spec, nil
+}
+
+// ResolverAddr computes the daemon's in-tunnel resolver address from the
+// local peer CIDR: last IP of the network minus one, port 53 — mirroring
+// upstream ServiceViaMemory (NewServiceViaMemory calls
+// GetLastIPFromNetwork(network, 1) and serves on DefaultPort).
+func ResolverAddr(ipCIDR string) (netip.AddrPort, error) {
+	pfx, err := netip.ParsePrefix(ipCIDR)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("local peer address %q is not CIDR: %w", ipCIDR, err)
+	}
+	if !pfx.Addr().Is4() {
+		return netip.AddrPort{}, fmt.Errorf("resolver address derivation needs the v4 peer address, got %q", ipCIDR)
+	}
+	a := pfx.Masked().Addr().As4()
+	bits := pfx.Bits()
+	// broadcast = network | ^mask; resolver = broadcast - 1
+	v := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3])
+	v |= ^uint32(0) >> bits
+	v--
+	out := [4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+	return netip.AddrPortFrom(netip.AddrFrom4(out), 53), nil
 }
 
 // canon lowercases and strips the trailing dot ("." canonicalizes to "").

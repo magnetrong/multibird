@@ -21,18 +21,18 @@ func TestRenderApplyScriptGolden(t *testing.T) {
 	got := renderApplyScript(
 		[]string{"State:/Network/Service/multibird-vpn-Match-0/DNS"},
 		keys,
-		netip.MustParseAddrPort("127.0.0.1:5300"),
+		netip.MustParseAddrPort("100.96.255.254:53"),
 	)
 	want := `remove State:/Network/Service/multibird-vpn-Match-0/DNS
 d.init
-d.add ServerAddresses * 127.0.0.1
-d.add ServerPort # 5300
+d.add ServerAddresses * 100.96.255.254
+d.add ServerPort # 53
 d.add SupplementalMatchDomains * mesh.magnetrong.com
 d.add SupplementalMatchDomainsNoSearch # 0
 set State:/Network/Service/multibird-vpn-Search-0/DNS
 d.init
-d.add ServerAddresses * 127.0.0.1
-d.add ServerPort # 5300
+d.add ServerAddresses * 100.96.255.254
+d.add ServerPort # 53
 d.add SupplementalMatchDomains * 96.100.in-addr.arpa home.magnetrong.com mesh.magnetrong.com
 d.add SupplementalMatchDomainsNoSearch # 1
 set State:/Network/Service/multibird-vpn-Match-0/DNS

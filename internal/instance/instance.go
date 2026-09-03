@@ -13,7 +13,6 @@ package instance
 import (
 	"encoding/json"
 	"fmt"
-	"net/netip"
 	"path/filepath"
 )
 
@@ -44,10 +43,6 @@ func ParseDNSMode(s string) (DNSMode, error) {
 // DNSDisableSys reports whether netbird's own host-DNS configuration must be
 // off for this mode (the disable_dns daemon setting).
 func (m DNSMode) DNSDisableSys() bool { return m != DNSNative }
-
-// DNSBasePort is the base for derived per-instance resolver listen ports
-// (multibird DNS mode): 5300+index on 127.0.0.1.
-const DNSBasePort = 5300
 
 // DefaultBasePort is the default WireGuard listen port for index 0.
 // Deliberately NOT 51820 (stock netbird's default): multibird lives alongside
@@ -95,9 +90,6 @@ type Params struct {
 	DaemonAddr string // --daemon-addr value (unix://<SocketPath>)
 	PIDFile    string // daemon pid file (written by internal/daemon)
 	WGPort     int    // WireGuard listen port
-	// DNSListen is the fixed resolver address used in DNSMultibird mode
-	// (sent as customDNSAddress): 127.0.0.1:<5300+index>.
-	DNSListen netip.AddrPort
 }
 
 // DeriveParams computes every isolation parameter. Pure function of its
@@ -109,7 +101,6 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 	if port == 0 {
 		port = DefaultBasePort + i.Index
 	}
-	dnsPort := uint16(DNSBasePort + i.Index) //nolint:gosec // G115: index is small
 	return Params{
 		Dir:        dir,
 		TOMLPath:   filepath.Join(dir, "instance.toml"),
@@ -119,7 +110,6 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 		DaemonAddr: "unix://" + sock,
 		PIDFile:    filepath.Join(runDir, i.Name+".pid"),
 		WGPort:     port,
-		DNSListen:  netip.AddrPortFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), dnsPort),
 	}
 }
 

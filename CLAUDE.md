@@ -193,6 +193,16 @@ fails if `TestedMax` != the go.mod pin. To bump:
   brief's 99 is only scutil's theoretical cap). Primary-resolver (route-all) claims
   are refused in multibird mode. Linux keeps native netbird DNS management;
   arbitration never decides domain OWNERSHIP conflicts, only resolver placement.
+- **2026-09-03 — darwin resolver address (corrects part of the 2026-09-02 entry)**:
+  field-verified that on macOS `customDNSAddress` is IGNORED: netbird always uses a
+  userspace-WireGuard bind there, and `NewDefaultServer` then picks
+  `ServiceViaMemory`, an in-tunnel packet hook at `GetLastIPFromNetwork(network, 1)`
+  port 53 (e.g. 100.96.255.254:53 for a /16) — nothing ever binds the configured
+  address. The arbiter therefore derives the resolver address from the local peer
+  CIDR (hostdns.ResolverAddr, mirroring upstream) and every SetConfig explicitly
+  CLEARS customDNSAddress. Two more field findings the same day: scutil exits 0 on
+  failed writes (errors go to stdout — output is parsed now), and host-DNS writes
+  require root (ErrNeedsRoot; plain `status` downgrades to a sudo hint).
 ## Style
 
 Standard Go. No clever abstractions, no frameworks beyond cobra/bubbletea/toml. Wrap

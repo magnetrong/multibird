@@ -15,16 +15,6 @@ import (
 	"github.com/netbirdio/netbird/client/proto"
 )
 
-// customDNSAddress is the customDNSAddress value for an instance's mode:
-// the fixed listener in multibird mode, "" (→ "empty", clear) otherwise.
-// Every SetConfig call MUST go through this — see nbgrpc.SetConfigParams.
-func customDNSAddress(inst *instance.Instance, p instance.Params) string {
-	if inst.DNSMode == instance.DNSMultibird {
-		return p.DNSListen.String()
-	}
-	return ""
-}
-
 // applyHostDNSFromStatus registers/refreshes the instance's scoped resolvers
 // from a live status. Skips silently when the engine has no IP yet (the next
 // status/sync backfills, like interface discovery).
@@ -35,8 +25,7 @@ func (e *Env) applyHostDNSFromStatus(inst *instance.Instance, st *proto.StatusRe
 	if st.GetFullStatus().GetLocalPeerState().GetIP() == "" {
 		return nil // engine still connecting
 	}
-	p := inst.DeriveParams(e.Store.Root, e.Store.RunDir)
-	spec, err := hostdns.Derive(st, p.DNSListen)
+	spec, err := hostdns.Derive(st)
 	if err != nil {
 		if errors.Is(err, hostdns.ErrPrimaryClaim) {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)

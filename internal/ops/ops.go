@@ -149,11 +149,15 @@ func (e *Env) Up(ctx context.Context, inst *instance.Instance, strict bool) erro
 			}
 		}
 		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{
-			ManagementURL:    inst.ManagementURL,
-			InterfaceName:    e.Platform.InterfaceHint(inst.Index),
-			WireguardPort:    p.WGPort,
-			DisableDNS:       inst.DNSMode.DNSDisableSys(),
-			CustomDNSAddress: customDNSAddress(inst, p),
+			ManagementURL: inst.ManagementURL,
+			InterfaceName: e.Platform.InterfaceHint(inst.Index),
+			WireguardPort: p.WGPort,
+			DisableDNS:    inst.DNSMode.DNSDisableSys(),
+			// Always cleared: on macOS (userspace bind) customDNSAddress is
+			// ignored — the resolver serves in-tunnel at lastIP(network)-1:53
+			// — and we must state the field on EVERY SetConfig anyway (it
+			// resets when absent). See CLAUDE.md 2026-09-03.
+			CustomDNSAddress: "",
 		})
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", inst.Name, err)

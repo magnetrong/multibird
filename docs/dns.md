@@ -47,12 +47,18 @@ On macOS multibird supersedes v1's "detect, explain, never arbitrate" policy: wi
   `server.go Initialize()` calls `service.Listen()` before the host-configurator
   swap) and keeps forwarding nameserver groups and serving peer names; only the
   host configuration is skipped.
-- The resolver listens on a FIXED per-instance address, `127.0.0.1:<5300+index>`,
-  pinned via `customDNSAddress` in every SetConfig call (upstream persists that
-  field unconditionally, so every call must state it; "empty" clears).
-- multibird derives the instance's scoped-resolver spec from live status (peer
-  domain = fqdn minus first label; nameserver-group match domains; in-addr.arpa /
-  ip6.arpa reverse zones mirroring upstream's rounding) and writes keys named
+- The resolver serves at a DETERMINISTIC in-tunnel address: on macOS netbird
+  always runs a userspace-WireGuard bind, so DNS is an in-memory packet hook at
+  the last IP of the mesh network minus one, port 53 (e.g. `100.96.255.254:53`
+  for a /16) — upstream `ServiceViaMemory`/`GetLastIPFromNetwork(network, 1)`.
+  `customDNSAddress` is IGNORED on that path (verified 2026-09-03), so multibird
+  derives the address from the local peer CIDR instead, and every SetConfig call
+  explicitly CLEARS customDNSAddress (upstream persists that field
+  unconditionally, so every call must state it; "empty" clears).
+- multibird derives the instance's scoped-resolver spec from live status (the
+  in-tunnel resolver address above; peer domain = fqdn minus first label;
+  nameserver-group match domains; in-addr.arpa / ip6.arpa reverse zones mirroring
+  upstream's rounding) and writes keys named
   `State:/Network/Service/multibird-<instance>-(Match|Search)-<n>/DNS`, ≤50 domains
   and ≤1500 bytes per key (upstream's own limits), followed by
   `dscacheutil -flushcache` + `killall -HUP mDNSResponder`.
