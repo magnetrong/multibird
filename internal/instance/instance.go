@@ -90,6 +90,14 @@ type Params struct {
 	DaemonAddr string // --daemon-addr value (unix://<SocketPath>)
 	PIDFile    string // daemon pid file (written by internal/daemon)
 	WGPort     int    // WireGuard listen port
+	// StateDir is netbird's own state directory for this instance, passed
+	// as NB_STATE_DIR. It MUST be per-instance: --config only overrides the
+	// path of netbird's "default" profile, while the profile REGISTRY that
+	// the daemon consults at startup and on Login (active_profile.json, the
+	// per-user profile dir, residual state.json) lives in the state dir and
+	// would otherwise be the shared /var/lib/netbird — see the 2026-09-04
+	// Decisions entry.
+	StateDir string
 }
 
 // DeriveParams computes every isolation parameter. Pure function of its
@@ -110,6 +118,7 @@ func (i *Instance) DeriveParams(configRoot, runDir string) Params {
 		DaemonAddr: "unix://" + sock,
 		PIDFile:    filepath.Join(runDir, i.Name+".pid"),
 		WGPort:     port,
+		StateDir:   filepath.Join(dir, "state"),
 	}
 }
 

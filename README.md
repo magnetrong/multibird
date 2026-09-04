@@ -53,8 +53,16 @@ to sanity-check your setup, `multibird nuke <name>` when an instance crashes hal
 ## Recommended pattern: stock for work, multibird for the rest
 
 multibird **never touches your stock NetBird installation** — the default daemon/profile
-that the official CLI and GUI app manage. Instances live strictly alongside it. The
-pattern we recommend:
+that the official CLI and GUI app manage. Instances live strictly alongside it: each
+daemon gets its own netbird state directory (`NB_STATE_DIR`), so it can neither read nor
+rewrite the profile the stock install is using.
+
+> **If you ran multibird v0.2.10 or earlier on a host where stock NetBird had a named
+> profile active** (`netbird profile list` shows one that is not `default`), check your
+> stock management URL with `netbird status --detail` — a `multibird up` could have
+> overwritten it. Re-point it with `netbird up --management-url <your URL>` if so.
+
+The pattern we recommend:
 
 - Keep your **company/work mesh on stock NetBird** — it keeps the official GUI, MDM
   compatibility, and IT's expectations intact.

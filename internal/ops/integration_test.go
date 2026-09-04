@@ -38,17 +38,13 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 	inst := &instance.Instance{Name: "itest", Index: 0}
 	p := inst.DeriveParams(root, run)
 
-	// Hermetic daemon state. WITHOUT this the daemon resolves the machine's
-	// /var/lib/netbird/active_profile.json, and on a box where stock netbird
-	// has logged in under the profiles rework that names a NON-default
-	// profile — so the daemon loads the STOCK install's config and ignores
-	// our --config (verified on 0.77.1: it went on to bring up the stock
-	// wt0 interface). The test would then be asserting against the host's
-	// netbird setup rather than this instance. That difference is exactly
-	// why this test passed on a dev box with netbird state and failed on the
-	// clean CI runner.
-	stateDir := t.TempDir()
-	if err := daemon.Start(inst, p, []string{"NB_STATE_DIR=" + stateDir}); err != nil {
+	// daemon.Start pins NB_STATE_DIR to p.StateDir, which is what makes this
+	// hermetic: without it the daemon reads the machine's
+	// /var/lib/netbird/active_profile.json and, where that names a NAMED
+	// stock profile, loads the STOCK install's config instead of ours. That
+	// is exactly why this test used to pass on a dev box carrying netbird
+	// state and fail on the clean CI runner.
+	if err := daemon.Start(inst, p, nil); err != nil {
 		t.Fatalf("daemon.Start: %v", err)
 	}
 	t.Cleanup(func() { daemon.Nuke(p) })
@@ -82,6 +78,18 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 	// still absent. ops.Up's Login → SetConfig → Up order stays correct
 	// under either semantics, because Login uses UpdateOrCreateConfig.
 	waitForFile(t, p.ConfigJSON, 20*time.Second)
+
+	// The daemon must be keeping its profile registry in the instance's own
+	// state dir. If NB_STATE_DIR ever stops being honored, this is empty and
+	// the daemon is back to sharing /var/lib/netbird with the stock install
+	// (and with every other instance).
+	ents, err := os.ReadDir(p.StateDir)
+	if err != nil {
+		t.Fatalf("reading instance state dir %s: %v", p.StateDir, err)
+	}
+	if len(ents) == 0 {
+		t.Errorf("instance state dir %s is empty — the daemon is not using it, so netbird state is shared with the host's stock install", p.StateDir)
+	}
 
 	// The isolation params must land in THIS instance's config.json. If the
 	// profiles rework ever resolves the "default" handle to a shared global

@@ -203,6 +203,29 @@ fails if `TestedMax` != the go.mod pin. To bump:
   CLEARS customDNSAddress. Two more field findings the same day: scutil exits 0 on
   failed writes (errors go to stdout — output is parsed now), and host-DNS writes
   require root (ErrNeedsRoot; plain `status` downgrades to a sudo hint).
+- **2026-09-04 — per-instance `NB_STATE_DIR` (isolation fix, both platforms)**:
+  `--config` is NOT sufficient isolation. Verified in v0.77.1: `--config` only
+  sets `profilemanager.DefaultConfigPath` (the *default profile's* file) via
+  `NewServiceManager`, while `DefaultConfigPathDir` — holding
+  `active_profile.json`, the per-user profile dirs and residual `state.json` —
+  stays at the shared `/var/lib/netbird`. So on a host whose stock netbird has
+  a NAMED profile active (`netbird profile add`, as opposed to the default
+  one), `Server.Start` → `getConfig(activeProf)` resolves the STOCK install's
+  profile and the daemon comes up on stock's management URL and interface,
+  ignoring `--config` entirely; worse, `Login` sends no `ProfileName`, so
+  `authorizeAndPrepareLogin` → `persistLoginOverrides` writes multibird's
+  managementUrl/PSK into the STOCK profile config — field-verified by
+  overwriting a test copy's `ManagementURL` from the real mesh to the probe
+  URL, and it happens even when the login then FAILS. `daemon.Start` therefore
+  always passes `NB_STATE_DIR=<instance dir>/state` (derived as
+  `Params.StateDir`), appended LAST so neither the inherited environment nor
+  `platform.DaemonEnv()` can un-isolate a daemon. This also explains the
+  2026-09-02 "config file does not exist" field bug at its root: Login was
+  writing to the host's active profile, so the per-instance config.json was
+  never created. Sending `ProfileName: "default"` on Login is NOT the fix — 
+  `switchProfileIfNeeded` would rewrite the shared `active_profile.json` and
+  yank the stock install's active profile out from under it.
+
 ## Style
 
 Standard Go. No clever abstractions, no frameworks beyond cobra/bubbletea/toml. Wrap

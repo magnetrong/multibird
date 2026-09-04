@@ -29,6 +29,7 @@ func TestDeriveParams(t *testing.T) {
 				DaemonAddr: "unix:///var/run/multibird/home.sock",
 				PIDFile:    "/var/run/multibird/home.pid",
 				WGPort:     51900,
+				StateDir:   "/home/u/.config/multibird/home/state",
 			},
 		},
 		{
@@ -41,6 +42,7 @@ func TestDeriveParams(t *testing.T) {
 				ConfigJSON: "/r/lab/config.json", LogFile: "/r/lab/daemon.log",
 				SocketPath: "/v/lab.sock", DaemonAddr: "unix:///v/lab.sock",
 				PIDFile: "/v/lab.pid", WGPort: 51903,
+				StateDir: "/r/lab/state",
 			},
 		},
 		{
@@ -52,6 +54,7 @@ func TestDeriveParams(t *testing.T) {
 				ConfigJSON: "/r/lab/config.json", LogFile: "/r/lab/daemon.log",
 				SocketPath: "/v/lab.sock", DaemonAddr: "unix:///v/lab.sock",
 				PIDFile: "/v/lab.pid", WGPort: 40000,
+				StateDir: "/r/lab/state",
 			},
 		},
 	}

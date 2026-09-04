@@ -58,11 +58,23 @@ Acceptance criteria:
   (`nameserver 100.96.255.254 port 53`, Supplemental flags) — see docs/dns.md for
   why (userspace-bind ServiceViaMemory; took the 2026-09-03 corrections to land).
 
+Resolved after v0.2.10:
+- **Stock-install isolation was incomplete on BOTH platforms** — `--config` alone
+  does not isolate a daemon from the host's netbird profile registry, so on a host
+  with a named stock profile active a multibird daemon loaded *and rewrote* the
+  stock install's config. Fixed with a per-instance `NB_STATE_DIR`; see the
+  2026-09-04 Decisions entry. Verified on Linux against a live stock install
+  (`Profile: vpn`, `vpn.magnetrong.com`): state byte-identical after runs.
+  **Still to confirm on macOS** — the mechanism is platform-neutral (`NB_STATE_DIR`
+  is read in an unguarded `init()`, same `/var/lib/netbird` default) but it has not
+  been exercised on a Mac.
+
 Open questions carried out of v0.2 field testing:
 - **Linux multi-instance routing**: does netbird's Linux advanced routing (policy
   tables) have the same multi-daemon collision the macOS scoped-default flush had
-  (fixed via NB_USE_LEGACY_ROUTING on darwin)? Test two instances on Linux before
-  relying on it; platform.DaemonEnv is the hook if Linux needs the same treatment.
+  (fixed via NB_USE_LEGACY_ROUTING on darwin)? Two daemons now start cleanly with
+  isolated state, but this has NOT been tested with two real meshes and overlapping
+  routes; platform.DaemonEnv is the hook if Linux needs the same treatment.
 - **Upstream**: consider filing an issue on netbirdio/netbird — Login silently
   ignores config fields (surprising API), and flushScopedDefaults assumes a single
   daemon per host.

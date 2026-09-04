@@ -37,10 +37,24 @@ func Start(inst *instance.Instance, p instance.Params, extraEnv []string) error 
 	// A stale socket from a crashed daemon prevents the new one from binding.
 	_ = os.Remove(p.SocketPath)
 
-	cmd := nbcli.New(inst.NetbirdBin).ServiceRunCmd(p.ConfigJSON, p.DaemonAddr, p.LogFile, LogLevel)
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
+	// Per-instance netbird state dir. NOT optional: --config only redirects
+	// the "default" profile's config file, while the profile registry the
+	// daemon reads at startup and on Login — active_profile.json and the
+	// per-user profile dir — lives in the state dir. Left at the default
+	// /var/lib/netbird, a daemon whose host has a NAMED stock profile active
+	// loads and rewrites the STOCK install's config instead of ours (verified
+	// on 0.77.1; see CLAUDE.md 2026-09-04). 0700: netbird's state includes
+	// profile configs, which carry keys.
+	if err := os.MkdirAll(p.StateDir, 0o700); err != nil {
+		return fmt.Errorf("creating netbird state dir %s: %w (daemons need root — try sudo, see docs/privileges.md)", p.StateDir, err)
 	}
+
+	cmd := nbcli.New(inst.NetbirdBin).ServiceRunCmd(p.ConfigJSON, p.DaemonAddr, p.LogFile, LogLevel)
+	// NB_STATE_DIR goes LAST and therefore wins: exec uses the last value for
+	// a duplicated key, so neither the inherited environment nor extraEnv can
+	// silently un-isolate a daemon.
+	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd.Env = append(cmd.Env, "NB_STATE_DIR="+p.StateDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil
