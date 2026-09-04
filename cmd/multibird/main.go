@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -57,6 +58,20 @@ func targets(e *ops.Env, args []string, all bool) ([]*instance.Instance, error) 
 	return []*instance.Instance{i}, nil
 }
 
+// instancesFor resolves the optional name argument of a read-only command
+// into its targets: the named instance, or all of them. Unlike targets() it
+// needs no --all flag and tolerates having none configured.
+func instancesFor(e *ops.Env, args []string) ([]*instance.Instance, error) {
+	if len(args) == 1 {
+		i, err := e.Load(args[0])
+		if err != nil {
+			return nil, err
+		}
+		return []*instance.Instance{i}, nil
+	}
+	return e.List()
+}
+
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "multibird",
@@ -66,7 +81,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(addCmd(), upCmd(), downCmd(), statusCmd(), listCmd(),
+	root.AddCommand(addCmd(), upCmd(), downCmd(), statusCmd(), peersCmd(), listCmd(),
 		removeCmd(), doctorCmd(), nukeCmd(), setCmd(), logsCmd(),
 		installCmd(), uninstallCmd(), upgradeCmd(), dnsCmd(), tuiCmd())
 	return root
@@ -223,14 +238,8 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var insts []*instance.Instance
-			if len(args) == 1 {
-				i, err := e.Load(args[0])
-				if err != nil {
-					return err
-				}
-				insts = []*instance.Instance{i}
-			} else if insts, err = e.List(); err != nil {
+			insts, err := instancesFor(e, args)
+			if err != nil {
 				return err
 			}
 			sts := e.Status(cmd.Context(), insts)
@@ -250,6 +259,80 @@ func statusCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&jsonOut, "json", false, "machine-readable output")
 	return c
+}
+
+func peersCmd() *cobra.Command {
+	var jsonOut bool
+	c := &cobra.Command{
+		Use:               "peers [name]",
+		Short:             "List each mesh's peers and their mesh addresses",
+		Long:              "List the peers of one instance, or of every instance when no name is given,\nso you don't have to open a management dashboard to find a peer's address.",
+		ValidArgsFunction: completeInstanceNames,
+		Args:              cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			insts, err := instancesFor(e, args)
+			if err != nil {
+				return err
+			}
+			if len(insts) == 0 {
+				fmt.Println("no instances — `multibird add <name> --management-url ... --setup-key ...`")
+				return nil
+			}
+			groups := e.Peers(cmd.Context(), insts)
+			if jsonOut {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(groups)
+			}
+			var total int
+			for _, g := range groups {
+				total += len(g.Peers)
+			}
+			if total > 0 {
+				w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+				fmt.Fprintln(w, "INSTANCE\tPEER\tMESH IP\tSTATUS\tLAST HANDSHAKE")
+				for _, g := range groups {
+					for _, p := range g.Peers {
+						fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+							g.Name, p.Name, p.IP, p.Status, handshakeAgo(p.LastHandshake))
+					}
+				}
+				if err := w.Flush(); err != nil {
+					return err
+				}
+			}
+			// Say why an instance contributed nothing, rather than leaving a
+			// silent gap in the table.
+			for _, g := range groups {
+				if len(g.Peers) == 0 {
+					hint := ""
+					if g.State == "stopped" {
+						hint = fmt.Sprintf(" — `sudo multibird up %s`", g.Name)
+					}
+					fmt.Printf("%s: no peers (%s)%s\n", g.Name, g.State, hint)
+				}
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&jsonOut, "json", false, "machine-readable output")
+	return c
+}
+
+// handshakeAgo renders a peer's last WireGuard handshake as an age.
+func handshakeAgo(t *time.Time) string {
+	if t == nil {
+		return "-"
+	}
+	d := time.Since(*t).Round(time.Second)
+	if d < 0 {
+		d = 0 // clock skew between us and the daemon
+	}
+	return d.String() + " ago"
 }
 
 func listCmd() *cobra.Command {

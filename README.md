@@ -38,10 +38,17 @@ multibird status
 NAME  STATE      NETBIRD IP     PEERS  IFACE    MGMT                          VERSION
 home  Connected  100.92.14.7    12     wt-mb-0  https://netbird.example.home  0.59.5
 lab   Connected  100.101.3.22   4      wt-mb-1  https://api.netbird.io        0.59.5
+
+# look up a peer's mesh address without opening a management dashboard
+multibird peers
+INSTANCE  PEER                          MESH IP       STATUS     LAST HANDSHAKE
+home      nas.netbird.example.home      100.92.14.9   Connected  12s ago
+home      vps.netbird.example.home      100.92.14.3   Connected  1m4s ago
+lab       builder.netbird.io            100.101.3.8   Idle       -
 ```
 
-`multibird status --json` for scripts, `multibird doctor` to sanity-check your setup,
-`multibird nuke <name>` when an instance crashes half-up.
+`multibird status --json` and `multibird peers --json` for scripts, `multibird doctor`
+to sanity-check your setup, `multibird nuke <name>` when an instance crashes half-up.
 
 ## Recommended pattern: stock for work, multibird for the rest
 
