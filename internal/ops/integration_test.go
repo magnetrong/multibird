@@ -14,6 +14,7 @@ package ops
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"testing"
@@ -22,7 +23,6 @@ import (
 	"github.com/magnetrong/multibird/internal/daemon"
 	"github.com/magnetrong/multibird/internal/instance"
 	"github.com/magnetrong/multibird/internal/nbgrpc"
-	"github.com/magnetrong/multibird/internal/version"
 )
 
 func TestIntegrationDaemonLifecycle(t *testing.T) {
@@ -38,7 +38,17 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 	inst := &instance.Instance{Name: "itest", Index: 0}
 	p := inst.DeriveParams(root, run)
 
-	if err := daemon.Start(inst, p, nil); err != nil {
+	// Hermetic daemon state. WITHOUT this the daemon resolves the machine's
+	// /var/lib/netbird/active_profile.json, and on a box where stock netbird
+	// has logged in under the profiles rework that names a NON-default
+	// profile — so the daemon loads the STOCK install's config and ignores
+	// our --config (verified on 0.77.1: it went on to bring up the stock
+	// wt0 interface). The test would then be asserting against the host's
+	// netbird setup rather than this instance. That difference is exactly
+	// why this test passed on a dev box with netbird state and failed on the
+	// clean CI runner.
+	stateDir := t.TempDir()
+	if err := daemon.Start(inst, p, []string{"NB_STATE_DIR=" + stateDir}); err != nil {
 		t.Fatalf("daemon.Start: %v", err)
 	}
 	t.Cleanup(func() { daemon.Nuke(p) })
@@ -60,21 +70,48 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 	}
 	t.Logf("daemon status=%q version=%q", st.GetStatus(), st.GetDaemonVersion())
 
-	// Guard the Login-before-SetConfig ordering (see ops.Up): on a FRESH
-	// daemon with no config.json, SetConfig must fail — in the tested
-	// netbird range, SetConfig only updates an existing profile config and
-	// Login is what creates it. (Verified version-dependent: 0.76 happily
-	// creates the file instead, so only assert in-range.) If this fails on a
-	// new in-range version, upstream semantics changed: re-check the
-	// ordering in ops.Up before bumping TestedMax.
-	if in, verr := version.InTestedRange(st.GetDaemonVersion()); verr == nil && in {
-		err = c.SetConfig(ctx, nbgrpc.SetConfigParams{ManagementURL: "https://example.invalid"})
-		if err == nil {
-			t.Fatal("SetConfig succeeded on a daemon with no config.json — upstream semantics changed, re-verify the Login/SetConfig ordering in ops.Up")
-		}
-		t.Logf("SetConfig before Login correctly refused: %v", err)
-	} else {
-		t.Logf("daemon %s outside tested range — skipping SetConfig-ordering guard", st.GetDaemonVersion())
+	// The daemon creates its profile's config.json ITSELF at startup
+	// (Server.Start → getConfig → profilemanager.ReadConfig, which creates
+	// when missing), asynchronously with respect to the gRPC server
+	// answering RPCs — so wait for the file instead of racing it. Its
+	// appearance at p.ConfigJSON is itself the assertion that --config, our
+	// only isolation mechanism for netbird's own state, was honored.
+	//
+	// This supersedes the older "SetConfig must fail before Login" guard,
+	// which raced that same bootstrap: it held only while config.json was
+	// still absent. ops.Up's Login → SetConfig → Up order stays correct
+	// under either semantics, because Login uses UpdateOrCreateConfig.
+	waitForFile(t, p.ConfigJSON, 20*time.Second)
+
+	// The isolation params must land in THIS instance's config.json. If the
+	// profiles rework ever resolves the "default" handle to a shared global
+	// file, two multibird daemons would silently overwrite each other's
+	// interface and port — fail loudly here rather than in the field.
+	const wantIface, wantPort = "wt-mb-itest", 51987
+	if err := c.SetConfig(ctx, nbgrpc.SetConfigParams{
+		ManagementURL: "https://example.invalid",
+		InterfaceName: wantIface,
+		WireguardPort: wantPort,
+		DisableDNS:    true,
+	}); err != nil {
+		t.Fatalf("SetConfig on the instance's own profile: %v", err)
+	}
+	raw, err := os.ReadFile(p.ConfigJSON)
+	if err != nil {
+		t.Fatalf("reading %s: %v", p.ConfigJSON, err)
+	}
+	// Field names, not json tags: profilemanager.Config carries none.
+	var cfg struct {
+		WgIface    string
+		WgPort     int
+		DisableDNS bool
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("parsing %s: %v", p.ConfigJSON, err)
+	}
+	if cfg.WgIface != wantIface || cfg.WgPort != wantPort || !cfg.DisableDNS {
+		t.Errorf("SetConfig did not land in the instance's own config.json (%s):\n got WgIface=%q WgPort=%d DisableDNS=%t\nwant WgIface=%q WgPort=%d DisableDNS=true",
+			p.ConfigJSON, cfg.WgIface, cfg.WgPort, cfg.DisableDNS, wantIface, wantPort)
 	}
 
 	if err := daemon.Stop(p); err != nil {
@@ -88,5 +125,20 @@ func TestIntegrationDaemonLifecycle(t *testing.T) {
 		if errs := daemon.Nuke(p); len(errs) != 0 {
 			t.Fatalf("nuke pass %d: %v", i, errs)
 		}
+	}
+}
+
+// waitForFile blocks until path exists, failing the test if it never does.
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never appeared within %s — the daemon did not honor --config", path, timeout)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
